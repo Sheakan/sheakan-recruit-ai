@@ -22,44 +22,11 @@ ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 
-# 成本跟踪：每 1K tokens 的近似单价（元，取自公开定价档，仅用于演示估算）
-PRICING = {
-    "glm-4-flash": 0.0001,
-    "glm-4v-plus": 0.05,
-    "glm-4-long": 0.0006,
-    "deepseek-chat": 0.001,
-    "default": 0.001,
-}
-COST_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cost_log.json")
 
 
 def log_cost(model: str, usage: dict):
-    """把一次调用的 token 用量与估算成本追加写入 cost_log.json（演示用，不影响主流程）。"""
-    try:
-        price = PRICING.get(model, PRICING["default"])
-        total = int(usage.get("total_tokens", 0) or 0)
-        rec = {
-            "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "model": model,
-            "prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
-            "completion_tokens": int(usage.get("completion_tokens", 0) or 0),
-            "total_tokens": total,
-            "cost": round(total / 1000.0 * price, 6),
-        }
-        log = []
-        if os.path.exists(COST_LOG):
-            try:
-                with open(COST_LOG, "r", encoding="utf-8") as f:
-                    log = json.load(f)
-            except Exception:
-                log = []
-        log.append(rec)
-        if len(log) > 5000:
-            log = log[-5000:]
-        with open(COST_LOG, "w", encoding="utf-8") as f:
-            json.dump(log, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    """成本跟踪已禁用（按需求移除 API 成本统计），保留签名避免调用点改动。"""
+    pass
 
 
 def _text_api_key():
@@ -116,11 +83,6 @@ def _chat(payload, api_key=None, timeout=60, retries=1):
             if resp.status_code >= 400:
                 raise RuntimeError(f"请求被拒绝（{resp.status_code}）：{resp.text[:200]}")
             data = resp.json()
-            if isinstance(data, dict) and data.get("usage"):
-                try:
-                    log_cost(model, data["usage"])
-                except Exception:
-                    pass
             return data
         except requests.exceptions.ConnectionError as e:
             last_err = f"网络异常，无法连接 {prov} 服务：{e}"

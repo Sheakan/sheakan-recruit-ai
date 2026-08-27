@@ -208,8 +208,6 @@
       <div class="stat"><div class="ic">📋</div><div><div class="n" id="s-total">0</div><div class="l">总记录数</div></div></div>
       <div class="stat"><div class="ic">🧑</div><div><div class="n" id="s-cand">0</div><div class="l">去重候选人</div></div></div>
       <div class="stat"><div class="ic">✅</div><div><div class="n" id="s-hire">0</div><div class="l">已入职</div></div></div>
-      <div class="stat"><div class="ic">📈</div><div><div class="n" id="s-rate">0%</div><div class="l">投递→入职转化率（去重）</div></div></div>
-      <div class="stat"><div class="ic">💰</div><div><div class="n" id="s-cost">¥0</div><div class="l">API 成本</div></div></div>
     </div>
 
     <div class="charts">
@@ -435,7 +433,7 @@ function showResult(recs){
   box.innerHTML=h; box.className='result show';
 }
 
-async function refresh(){ const r=await fetch("/api/records"); records=await r.json(); render(); await loadAnomalies(); await loadCost(); }
+async function refresh(){ const r=await fetch("/api/records"); records=await r.json(); render(); await loadAnomalies(); }
 
 // 所有录入入口共用的一条「结果文案」函数：added/merged/skipped 全部展示，
 // 避免出现「AI 说抽了 3 条，但看板只多了 1 条」的认知错位。
@@ -836,12 +834,6 @@ async function loadAnomalies(){
   }catch(e){ document.getElementById('anomBox').innerHTML='<span class="src">检测暂不可用</span>'; }
 }
 
-async function loadCost(){
-  try{
-    const c=await (await fetch("/api/cost")).json();
-    document.getElementById('s-cost').textContent="¥"+(c.cost||0).toFixed(2);
-  }catch(e){}
-}
 
 // ---- 渲染 ----
 let sortKey=null, sortDir=1;
@@ -908,13 +900,6 @@ function render(){
   document.getElementById('s-total').textContent=total;
   document.getElementById('s-cand').textContent=cand;
   document.getElementById('s-hire').textContent=hire;
-  const rate=delivered?Math.round(hire/delivered*100):0;
-  const rateLabel=deliveredStrict>0? (rate+"%") : (rate+"%");
-  document.getElementById('s-rate').textContent=rateLabel;
-  // 提示：当演示数据缺少"投递"阶段记录时，把分母回退为去重候选人数，并在 hover 时展示
-  document.getElementById('s-rate').title=deliveredStrict>0
-    ? `口径：入职去重人数 / 投递阶段去重人数 = ${hire} / ${deliveredStrict}`
-    : `口径提示：演示数据未含「投递」阶段记录，暂以「入职 / 全体去重候选人」展示 = ${hire} / ${cand}；正式使用建议在每条流程起点写入「投递」阶段。`;
 
   // 搜索 + 筛选（基于全量 records）
   const q=tblQ;

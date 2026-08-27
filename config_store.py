@@ -28,9 +28,9 @@ DEFAULT = {
         "smartsheet_sheetid": "",   # 企业微信智能表 sheetid
     },
     "tencent_docs": {
-        "mcp_token": "",        # 腾讯文档官方 MCP 个人 Token（https://docs.qq.com/open/auth/mcp.html 获取）
-        "file_id": "",          # 目标表格 fileId（粘贴文档链接即可，保存时解析）
-        "sheet_id": "",         # 目标工作表 sheetId（链接 ?tab= 之后，可空由链接识别）
+        "mcp_token": "",        # 腾讯文档官方 MCP 个人 Token（敏感，仅运行时填写，不入库明文/不前端回填/GitHub 不含）
+        "file_id": "SaJQsDjBoxOA",   # demo 默认目标表（公开分享链接 slug 等效，仅文档标识，非敏感）
+        "sheet_id": "BB08J2",        # demo 默认工作表（链接 ?tab= 之后）
     },
     "fields": None,             # 字段自定义配置（列表，见 fields.py）；None 表示沿用内置默认
 }
@@ -78,9 +78,9 @@ def load():
     if not cfg["tencent_docs"]["mcp_token"]:
         cfg["tencent_docs"]["mcp_token"] = os.environ.get("TENCENT_DOCS_MCP_TOKEN", "")
     if not cfg["tencent_docs"]["file_id"]:
-        cfg["tencent_docs"]["file_id"] = os.environ.get("TENCENT_DOCS_FILE_ID", "")
+        cfg["tencent_docs"]["file_id"] = os.environ.get("TENCENT_DOCS_FILE_ID", "SaJQsDjBoxOA")
     if not cfg["tencent_docs"]["sheet_id"]:
-        cfg["tencent_docs"]["sheet_id"] = os.environ.get("TENCENT_DOCS_SHEET_ID", "")
+        cfg["tencent_docs"]["sheet_id"] = os.environ.get("TENCENT_DOCS_SHEET_ID", "BB08J2")
     return cfg
 
 

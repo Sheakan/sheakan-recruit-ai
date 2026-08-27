@@ -662,24 +662,6 @@ def api_anomalies():
     return jsonify({"anomalies": anomaly.detect(load_store())})
 
 
-@app.route("/api/cost", methods=["GET"])
-def api_cost():
-    """演示用成本统计：汇总 cost_log.json 的 token 用量与估算金额。"""
-    try:
-        with open(ai_parse.COST_LOG, "r", encoding="utf-8") as f:
-            log = json.load(f)
-    except Exception:
-        return jsonify({"calls": 0, "total_tokens": 0, "cost": 0.0, "by_model": {}})
-    total_tokens = sum(x.get("total_tokens", 0) for x in log)
-    total_cost = round(sum(x.get("cost", 0) for x in log), 4)
-    by_model = {}
-    for x in log:
-        m = x.get("model", "unknown")
-        d = by_model.setdefault(m, {"calls": 0, "tokens": 0, "cost": 0.0})
-        d["calls"] += 1
-        d["tokens"] += x.get("total_tokens", 0)
-        d["cost"] = round(d["cost"] + x.get("cost", 0), 6)
-    return jsonify({"calls": len(log), "total_tokens": total_tokens, "cost": total_cost, "by_model": by_model})
 
 
 @app.route("/simulate", methods=["POST"])
