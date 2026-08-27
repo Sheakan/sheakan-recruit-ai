@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sheakan. 保留所有权利。
 # -*- coding: utf-8 -*-
 """腾讯文档同步适配器（官方 MCP 版）。
 

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sheakan. 保留所有权利。
 # -*- coding: utf-8 -*-
 """企业微信智能表写入适配器：通过「接收外部数据」Webhook 推送记录（免 OAuth）。"""
 import os

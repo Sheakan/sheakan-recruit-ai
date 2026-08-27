@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sheakan. 保留所有权利。
 # -*- coding: utf-8 -*-
 """服务端配置持久化：凭证改为界面可配置并持久化到 config.json（已 gitignore，不进仓库）。"""
 import json

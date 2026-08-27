@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sheakan. 保留所有权利。
 # -*- coding: utf-8 -*-
 """简历 PDF 文本提取（pdfplumber）。扫描件/图片型 PDF 返回空串，由上层提示需 OCR。"""
 import io

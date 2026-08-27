@@ -1,5 +1,7 @@
 # 智聘 · 招聘数据智能中枢（RecruitMind）
 
+> © 2026 Sheakan. 保留所有权利。
+
 把 HR 的招聘文本、简历、截图与企业微信数据，用**智谱 GLM** 自动转成结构化招聘数据并实时可视化，替代手工录入。
 
 - 代码仓库：https://github.com/Sheakan/sheakan-recruit-ai
@@ -33,9 +35,9 @@ python server.py
 - 智谱 GLM API Key（open.bigmodel.cn 创建，glm-4-flash 有免费额度）
 - 企业微信智能表 WEBHOOK（可填多个，每行一个）
 - 企业微信自建应用 corpid / corpsecret / Token / EncodingAESKey / AgentId
-- 腾讯文档 Client ID / Access Token / Open ID
+- 腾讯文档 MCP 个人令牌（环境变量 `TENCENT_DOCS_MCP_TOKEN`）
 
-也可以通过环境变量注入（`ZHIPU_API_KEY`、`SMARTSHEET_WEBHOOK`、`WECHAT_CORPID` 等），便于云平台部署；界面填写优先于环境变量。
+也可以通过环境变量注入（`ZHIPU_API_KEY`、`TENCENT_DOCS_MCP_TOKEN`、`SMARTSHEET_WEBHOOK`、`WECHAT_CORPID` 等），便于云平台部署；界面填写优先于环境变量。
 
 ## 使用
 
@@ -43,7 +45,7 @@ python server.py
 2. 「**上传简历 PDF**」走 `/api/parse_pdf`：pdfplumber 提取文本 → 智谱 GLM 抽取 21 字段；
 3. 「**上传图片**」亦可：招聘截图 / 简历照片经**视觉模型（glm-4v-plus）识别图中文字**后再结构化；
 4. 「**载入演示数据**」一键注入一组覆盖各阶段/渠道的样例（来源标记「示例数据」），便于快速填充看板做演示，可随时「清空」；
-5. 右侧看板实时刷新：招聘漏斗、岗位分布、明细表、转化率；
+5. 右侧看板实时刷新：招聘漏斗、各岗位/渠道/状态分布、明细表、异常预警；
 6. 数据可一键同步到已配置的企业微信智能表或腾讯文档在线表格。
 
 ## 接入企业微信智能表格（替代手工录入）
@@ -73,20 +75,18 @@ python server.py
 
 未配置或未授权时，本功能静默不可用，不影响「手动录入 / 上传 / 腾讯文档同步」等其它能力。
 
-## 接入腾讯文档在线表格（令牌模式）
+## 接入腾讯文档在线表格（官方 MCP 个人令牌）
 
-个人开发者用 **Client ID + Access Token + Open ID** 即可直接读写你的文档，**无需 OAuth 回调域名**；Client Secret 仅在走 OAuth 授权流程时才需要，可留空。
+个人开发者用 **单个 MCP 个人令牌** 即可直接读写你的文档，**无需 OAuth 回调域名、无需 Client Secret**：
 
-1. 在 [腾讯文档开放平台](https://docs.qq.com/open) 创建应用，拿到 `Client ID`（应用ID）、`Access Token`（长期有效）、`Open ID`；
-2. 新建一个**在线表格**，按以下 21 列建表头（首行）：
-   `候选人、性别、年龄、岗位、部门、阶段、状态、面试官、招聘负责人、渠道、学历、工作年限、当前公司、期望薪资、联系方式、时间、备注、来源、手机号、邮箱、期望城市`
-   打开该表，从地址栏复制：
-   - `fileId`：URL 中 `/sheet/` 之后的一段（如 `.../sheet/ABC123...` → `ABC123...`）；
+1. 打开 [腾讯文档 MCP 授权页](https://docs.qq.com/open/auth/mcp.html)，登录后复制你的 **MCP 个人令牌**（32 位十六进制，形如 `9f1f...`）；
+2. 新建一个**在线表格**，按 `fields.py` 当前字段建表头（首行）；打开该表，从地址栏复制：
+   - `fileId`：URL 中 `/sheet/` 之后的一段（如 `.../sheet/SaJQsDjBoxOA` → `SaJQsDjBoxOA`）；
    - `sheetId`：URL 中 `?tab=` 之后的一段（如 `?tab=BB08J2` → `BB08J2`）；
-3. 在「配置我的凭证」填写 `Client ID / Access Token / Open ID / 目标表格链接`（或通过环境变量 `TENCENT_DOCS_CLIENT_ID` `TENCENT_DOCS_ACCESS_TOKEN` `TENCENT_DOCS_OPEN_ID` 注入；fileId/sheetId 页面输入可免设）；
-4. 左侧点「**连接腾讯文档**」校验令牌 → 点「**同步到腾讯文档**」把看板数据全量写入该在线表格（同步采用「全量覆盖写入」，天然幂等）。
+3. 在「配置我的凭证」填写 **MCP 令牌 / 目标表格链接**（或部署时在平台设置环境变量 `TENCENT_DOCS_MCP_TOKEN`；fileId/sheetId 页面输入可免设）；
+4. 左侧点「**连接腾讯文档**」校验令牌 → 点「**同步到腾讯文档**」把看板数据全量写入该在线表格（后端以官方 MCP 协议调用 `sheet.set_range_value`，全量覆盖写入，天然幂等）。
 
-字段定义统一在 `fields.py`，企业微信智能表与腾讯文档共用，改一处即两处生效。
+字段定义统一在 `fields.py`，企业微信智能表与腾讯文档共用，改一处即两处生效；表头与字段顺序均由 `fields.py` 驱动，无需手动对齐列。
 
 ## 接入真实企业微信（落地用）
 
@@ -119,7 +119,7 @@ python server.py
 
 ## 在线预览 / 公开部署
 
-本系统是一个 Python(Flask) 服务，需要一个能跑后端的环境（纯静态托管不行）。推荐几种免费/低成本的部署方式，**部署时务必在平台设置环境变量** `ZHIPU_API_KEY`（其余可选）。
+本系统是一个 Python(Flask) 服务，需要一个能跑后端的环境（纯静态托管不行）。推荐几种免费/低成本的部署方式，**部署时务必在平台设置环境变量** `ZHIPU_API_KEY`（解析必需）、`TENCENT_DOCS_MCP_TOKEN`（同步腾讯文档时需要）。
 
 ### 方式一：Render（最简单，推荐）
 
@@ -138,7 +138,7 @@ python server.py
 
 - 仓库已含 `Dockerfile` 与 `cloudbaserc.json`（云托管容器模式）；
 - 在 CloudBase 控制台创建环境 → 云托管 → 新建服务，来源选「代码仓库 / Dockerfile」；
-- 在环境变量中填 `ZHIPU_API_KEY`、`SMARTSHEET_WEBHOOK`（可选）等；
+- 在环境变量中填 `ZHIPU_API_KEY`、`TENCENT_DOCS_MCP_TOKEN`（同步腾讯文档时需要）等；
 - 部署后获得公网访问地址，可直接在方案里展示"腾讯生态一键部署"。
 - 本项目已实际部署于 CloudBase 云托管（环境 `control103`），预览地址：**https://recruit-ai-303150-11-1343245134.sh.run.tcloudbase.com**
 

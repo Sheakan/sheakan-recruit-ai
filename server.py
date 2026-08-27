@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sheakan. 保留所有权利。
 # -*- coding: utf-8 -*-
 """招聘数据自动化服务：看板(GET /)、录入(/api/parse)、企业微信回调(/wecom)、模拟(/simulate)。"""
 import os
@@ -238,7 +239,8 @@ def api_config_save():
             if k in td:
                 _set_tdoc(cfg, k, td[k])
         # 官方 MCP 模式：用户填入单个「个人 Token」，无需 client_secret / OAuth 回调
-        if "mcp_token" in td:
+        # 前端留空表示"不修改"——保留服务端环境变量填充的值，避免把磁盘 config 清成空或写入他人 token
+        if td.get("mcp_token"):
             _set_tdoc(cfg, "mcp_token", td["mcp_token"])
 
     # 字段自定义（字段管理界面提交）：结构校验后整体覆盖
@@ -248,7 +250,7 @@ def api_config_save():
     config_store.save(cfg)
     global CFG
     CFG = cfg
-    tdocs.MCP_TOKEN = cfg["tencent_docs"]["mcp_token"]
+    tdocs.MCP_TOKEN = os.environ.get("TENCENT_DOCS_MCP_TOKEN") or cfg["tencent_docs"]["mcp_token"]
     tdocs.FILE_ID = cfg["tencent_docs"]["file_id"]
     tdocs.SHEET_ID = cfg["tencent_docs"]["sheet_id"]
     return jsonify(config_store.mask(CFG))

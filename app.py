@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sheakan. 保留所有权利。
 # -*- coding: utf-8 -*-
 """腾讯云函数 SCF 事件函数入口（与 scf_bootstrap 二选一）。
 - Web 函数：用 scf_bootstrap 直接跑 server.py，无需本文件。
