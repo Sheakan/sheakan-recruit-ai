@@ -304,8 +304,8 @@ def api_tdocs_sync():
     if not tdocs.enabled():
         return jsonify({"error": "未配置腾讯文档 Token：请在「配置我的凭证」填入 MCP Token（https://docs.qq.com/open/auth/mcp.html 获取）"}), 400
     data = request.get_json(silent=True) or {}
-    pushed, errs = tdocs.push(load_store(), data.get("fileId") or None, data.get("sheetId") or None)
-    return jsonify({"pushed": pushed, "errors": errs})
+    pushed, errs, doc_url = tdocs.push(load_store(), data.get("fileId") or None, data.get("sheetId") or None)
+    return jsonify({"pushed": pushed, "errors": errs, "doc_url": doc_url})
 
 
 # 可编辑字段（置信度等内部字段不允许通过接口修改）

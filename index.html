@@ -62,6 +62,11 @@
   .src{font-size:11px;color:var(--muted)}
   h3{margin:0 0 8px;font-size:15px}
   .scrollx{overflow:auto}
+  .tb-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .tb-tools input[type=text],.tb-tools input:not([type]),.tb-tools select{flex:1;min-width:160px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+  .tb-tools select{min-width:120px;flex:0 1 140px}
+  .pager{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .pager button{margin:0}
   .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .btnrow button{margin-top:0}
   .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:flex-start;justify-content:center;padding-top:60px;z-index:50}
@@ -171,6 +176,7 @@
         <button class="ghost" onclick="connectTdocs()">连接腾讯文档</button>
         <button class="ghost" onclick="syncTdocs()">同步到腾讯文档</button>
       </div>
+      <div id="tdoc-open" style="margin-top:8px"></div>
       <div style="margin-top:8px">
         <input id="tdoc-file" placeholder="腾讯文档表格链接（直接粘贴完整链接即可自动识别）" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:6px">
         <input id="tdoc-sheet" placeholder="工作表 ID（可选，留空由链接自动识别）" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px">
@@ -214,6 +220,13 @@
 <div class="bottom">
   <div class="card">
     <h3>明细数据（点击「编辑」可修正 AI 抽取误差；移动端左右滑动查看全部字段）</h3>
+    <div class="tb-tools">
+      <input id="tblSearch" placeholder="搜索：姓名 / 岗位 / 手机号 / 状态 …" oninput="onTblSearch()">
+      <select id="fStage" onchange="onTblFilter()"></select>
+      <select id="fStatus" onchange="onTblFilter()"></select>
+      <select id="fChannel" onchange="onTblFilter()"></select>
+      <span id="tblCount" class="src"></span>
+    </div>
     <div class="scrollx">
       <table id="tbl">
         <thead>        <tr>
@@ -223,6 +236,19 @@
         </tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+    <div class="pager">
+      <button class="ghost" onclick="onPage(-1)">‹ 上一页</button>
+      <span id="pageInfo" class="src"></span>
+      <button class="ghost" onclick="onPage(1)">下一页 ›</button>
+      <span class="src" style="margin-left:8px">每页</span>
+      <select id="pageSize" onchange="onPageSize()" style="padding:3px 6px">
+        <option value="20">20</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+      <span class="src">条</span>
     </div>
   </div>
 </div>
@@ -313,6 +339,8 @@ const FIELDS = [
   {k:"gender",label:"性别"},{k:"age",label:"年龄"},{k:"phone",label:"手机号"},{k:"email",label:"邮箱"},{k:"expectedCity",label:"期望城市"}
 ];
 let records = [];
+// 分页 / 搜索 / 筛选状态
+let page=1, pageSize=50, tblQ="", fStage="", fStatus="", fChannel="";
 let funnelChart, barChart, pieCh, pieSt;
 let chartsReady=false;
 // 惰性 + 容错初始化图表：若 echarts 未加载（CDN 被拦截/离线）或容器不存在，
@@ -640,6 +668,19 @@ async function syncTdocs(){
     let msg="已同步 "+(d.pushed||0)+" 条到腾讯文档在线表格";
     if(d.errors&&d.errors.length) msg+="；注意："+d.errors.join("; ");
     setStatus(msg);
+    // 同步成功后，给出「在腾讯文档中打开」按钮（新标签页跳转）
+    let openUrl=d.doc_url;
+    if(!openUrl){
+      // 兜底：用用户提供的链接/ID 直接构造
+      if(fileId.includes('docs.qq.com')) openUrl=fileId;
+      else if(fileId) openUrl="https://docs.qq.com/sheet/"+fileId;
+    }
+    const box=document.getElementById('tdoc-open');
+    if(box){
+      box.innerHTML = openUrl
+        ? `<a class="ghost" href="${openUrl}" target="_blank" rel="noopener">🔗 在腾讯文档中打开（${d.pushed||0} 条）</a>`
+        : `<span class="src">同步成功，但未获取到文档链接；请到腾讯文档查看刚写入的表格。</span>`;
+    }
   }catch(e){ setStatus("同步失败："+e.message, true); }
 }
 
@@ -713,7 +754,26 @@ async function loadCost(){
 
 // ---- 渲染 ----
 let sortKey=null, sortDir=1;
-function sortBy(k){ if(sortKey===k){sortDir*=-1;} else {sortKey=k;sortDir=1;} render(); }
+function sortBy(k){ if(sortKey===k){sortDir*=-1;} else {sortKey=k;sortDir=1;} page=1; render(); }
+// ---- 表格工具栏事件 ----
+function onTblSearch(){ tblQ=document.getElementById('tblSearch').value.trim().toLowerCase(); page=1; render(); }
+function onTblFilter(){
+  fStage=document.getElementById('fStage').value;
+  fStatus=document.getElementById('fStatus').value;
+  fChannel=document.getElementById('fChannel').value;
+  page=1; render();
+}
+function onPageSize(){ pageSize=parseInt(document.getElementById('pageSize').value,10)||50; page=1; render(); }
+function onPage(d){ page+=d; render(); }
+// 用当前 records 中的唯一值填充筛选下拉（保留当前选择）
+function _fillFilter(el, vals, allLabel){
+  const cur=el.value;
+  const uniq=Array.from(new Set(vals.filter(v=>v!==""&&v!=null)));
+  let html=`<option value="">${allLabel}</option>`;
+  uniq.forEach(v=>{ html+=`<option value="${v}">${v}</option>`; });
+  el.innerHTML=html;
+  if(uniq.includes(cur)) el.value=cur; else el.value="";
+}
 function render(){
   const total=records.length;
   // 生成去重候选人标识：优先 phone / email，否则 candidate+position（防止同名）
@@ -752,8 +812,22 @@ function render(){
     ? `口径：入职去重人数 / 投递阶段去重人数 = ${hire} / ${deliveredStrict}`
     : `口径提示：演示数据未含「投递」阶段记录，暂以「入职 / 全体去重候选人」展示 = ${hire} / ${cand}；正式使用建议在每条流程起点写入「投递」阶段。`;
 
+  // 搜索 + 筛选（基于全量 records）
+  const q=tblQ;
+  const filtered=records.filter(r=>{
+    if(fStage && (r.stage||"")!==fStage) return false;
+    if(fStatus && (r.status||"")!==fStatus) return false;
+    if(fChannel && (r.channel||"")!==fChannel) return false;
+    if(q){
+      const hay=((r.candidate||"")+" "+(r.position||"")+" "+(r.phone||"")+" "+(r.email||"")+" "+
+        (r.status||"")+" "+(r.stage||"")+" "+(r.channel||"")+" "+(r.department||"")+" "+
+        (r.interviewer||"")+" "+(r.recruiter||"")+" "+(r.expectedCity||"")).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
   // 排序（点击表头）
-  let view=records.slice();
+  let view=filtered.slice();
   if(sortKey){
     view.sort((a,b)=>{
       let x=a[sortKey]||"", y=b[sortKey]||"";
@@ -761,6 +835,12 @@ function render(){
       if(x<y) return -1*sortDir; if(x>y) return 1*sortDir; return 0;
     });
   } else { view=view.reverse(); }
+  // 分页
+  const totalPages=Math.max(1, Math.ceil(view.length/pageSize));
+  if(page>totalPages) page=totalPages;
+  if(page<1) page=1;
+  const start=(page-1)*pageSize;
+  const paged=view.slice(start, start+pageSize);
 
   // 图表：先尝试初始化（容错），任一图表失败不影响表格渲染
   _initCharts();
@@ -806,12 +886,23 @@ function render(){
   Object.values(latest).forEach(v=>{ const s=v.status; stMap[s]=(stMap[s]||0)+1; });
   _setChart(pieSt,{tooltip:{trigger:"item"},series:[{type:"pie",radius:"55%",data:Object.keys(stMap).map(s=>({name:s,value:stMap[s]})),label:{formatter:"{b}: {c}"}}]});
 
+  // 刷新筛选下拉（保留当前选择），并写入计数/分页信息
+  _fillFilter(document.getElementById('fStage'), records.map(r=>r.stage), "全部阶段");
+  _fillFilter(document.getElementById('fStatus'), records.map(r=>r.status), "全部状态");
+  _fillFilter(document.getElementById('fChannel'), records.map(r=>r.channel), "全部渠道");
+  const countEl=document.getElementById('tblCount');
+  if(countEl) countEl.textContent=`筛选后 ${filtered.length} 条 / 共 ${records.length} 条`;
+  const pi=document.getElementById('pageInfo');
+  if(pi) pi.textContent=`第 ${page} / ${totalPages} 页（每页 ${pageSize}）`;
+
   const tb=document.querySelector("#tbl tbody");
-  if(!view.length){
-    tb.innerHTML='<tr><td colspan="17"><div class="empty"><div class="big">📭</div>暂无数据，点「载入演示数据」或粘贴招聘信息开始体验</div></td></tr>';
+  if(!paged.length){
+    tb.innerHTML='<tr><td colspan="18"><div class="empty"><div class="big">📭</div>'+
+      (records.length? '当前筛选条件下没有匹配的记录' : '暂无数据，点「载入演示数据」或粘贴招聘信息开始体验')+
+      '</div></td></tr>';
     return;
   }
-  tb.innerHTML=view.map(r=>{
+  tb.innerHTML=paged.map(r=>{
     const st=r.stage||""; const cls="t-"+(st==="offer"?"offer":st);
     return `<tr>
       <td>${r.candidate||"-"}</td>

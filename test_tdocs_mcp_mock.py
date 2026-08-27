@@ -105,7 +105,7 @@ CALLS.clear()
 tdocs.MCP_TOKEN = "test-token"
 res = tdocs.push(RECORDS, file_id="FILE123", sheet_id="SHEET1")
 print("  push 返回:", res)
-_assert(res == (1, []), "push 返回 (1, [])")
+_assert(res[0] == 1 and res[1] == [], "push 返回 (1, [], url)")
 
 # initialize
 init = CALLS[0]
@@ -139,7 +139,7 @@ print("== 测试2: 无 file_id -> 兜底 create_excel_by_markdown ==")
 CALLS.clear()
 res = tdocs.push(RECORDS, file_id=None)
 print("  push 返回:", res)
-_assert(res == (1, []), "无 file_id 时兜底成功 (1, [])")
+_assert(res[0] == 1 and res[1] == [], "无 file_id 时兜底成功 (1, [], url)")
 call = CALLS[3]
 params = call["body"].get("params")
 _assert(params["name"] == "create_excel_by_markdown", "兜底调用 create_excel_by_markdown")

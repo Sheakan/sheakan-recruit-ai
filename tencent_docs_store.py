@@ -180,14 +180,38 @@ def _map_create_args(props, records):
 
 
 # ---------------- 写入入口 ----------------
+import re as _re
+_URL_RE = _re.compile(r'https?://docs\.qq\.com[^\s"\'<>\)]*')
+
+def _extract_url(text):
+    if not text:
+        return ""
+    m = _URL_RE.search(text)
+    return m.group(0) if m else ""
+
+def _doc_url(res, file_id):
+    """尽量拿到可打开的腾讯文档链接：优先从返回文本里找 docs.qq.com 链接，
+    其次用 file_id 兜底拼一个（腾讯文档表格 URL 形如 https://docs.qq.com/sheet/<id>）。"""
+    if isinstance(res, dict):
+        url = _extract_url(_text_of(res))
+        if url:
+            return url
+        for k in ("url", "web_url", "link", "file_url"):
+            v = res.get(k)
+            if v and "docs.qq.com" in str(v):
+                return str(v)
+    if file_id:
+        return "https://docs.qq.com/sheet/" + file_id
+    return ""
+
 def push(records, file_id=None, sheet_id=None):
-    """把记录同步到腾讯文档。返回 (记录条数, 错误信息列表)。失败不影响主流程。"""
+    """把记录同步到腾讯文档。返回 (记录条数, 错误信息列表, 文档链接)。失败不影响主流程。"""
     token = _token()
     if not token:
-        return 0, ["未配置腾讯文档 Token：请在「配置我的凭证」填入 MCP Token（https://docs.qq.com/open/auth/mcp.html 获取）"]
+        return 0, ["未配置腾讯文档 Token：请在「配置我的凭证」填入 MCP Token（https://docs.qq.com/open/auth/mcp.html 获取）"], ""
     file_id = file_id or FILE_ID
     if not records:
-        return 0, []
+        return 0, [], ""
 
     pushed = len(records)
     errs = []
@@ -195,7 +219,7 @@ def push(records, file_id=None, sheet_id=None):
         session = _initialize(token)
         tools = list_tools(token, session)
     except Exception as e:
-        return 0, [f"连接腾讯文档 MCP 失败：{e}"]
+        return 0, [f"连接腾讯文档 MCP 失败：{e}"], ""
 
     names = {t.get("name") for t in tools}
 
@@ -210,7 +234,7 @@ def push(records, file_id=None, sheet_id=None):
                 if isinstance(res, dict) and res.get("isError"):
                     errs.append("batch_update_sheet_range 报错：" + _text_of(res))
                 else:
-                    return pushed, errs
+                    return pushed, errs, _doc_url(res, file_id)
             except Exception as e:
                 errs.append(f"batch_update_sheet_range 调用失败：{e}")
         else:
@@ -227,7 +251,7 @@ def push(records, file_id=None, sheet_id=None):
                 if isinstance(res, dict) and res.get("isError"):
                     errs.append("create_excel_by_markdown 报错：" + _text_of(res))
                 else:
-                    return pushed, errs
+                    return pushed, errs, _doc_url(res, "")
             except Exception as e:
                 errs.append(f"create_excel_by_markdown 调用失败：{e}")
         else:
@@ -235,7 +259,7 @@ def push(records, file_id=None, sheet_id=None):
     else:
         errs.append("未找到可用写入工具；可用工具：" + ", ".join(sorted(names)))
 
-    return pushed, errs
+    return pushed, errs, ""
 
 
 def _text_of(result):
