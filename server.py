@@ -241,6 +241,10 @@ def api_config_save():
         if "mcp_token" in td:
             _set_tdoc(cfg, "mcp_token", td["mcp_token"])
 
+    # 字段自定义（字段管理界面提交）：结构校验后整体覆盖
+    if "fields" in data and isinstance(data["fields"], list):
+        cfg["fields"] = _sanitize_fields(data["fields"])
+
     config_store.save(cfg)
     global CFG
     CFG = cfg
@@ -260,6 +264,28 @@ def _set_tdoc(cfg, k, val):
     v = (val or "").strip()
     if v:
         cfg["tencent_docs"][k] = v
+
+
+def _sanitize_fields(lst):
+    """校验前端提交的字段配置，返回干净的列表；非法项直接丢弃。"""
+    out = []
+    for x in lst:
+        if not isinstance(x, dict):
+            continue
+        key = (x.get("key") or "").strip()
+        name = (x.get("name") or "").strip()
+        if not key or not name:
+            continue
+        if not re.match(r"^[A-Za-z0-9_]+$", key):   # 字段 key 仅允许字母数字下划线（避免 JSON/LLM 解析问题）
+            continue
+        out.append({
+            "key": key,
+            "name": name,
+            "desc": (x.get("desc") or "").strip(),
+            "builtin": bool(x.get("builtin")),
+            "enabled": bool(x.get("enabled", True)),
+        })
+    return out
 
 
 

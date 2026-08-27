@@ -14,6 +14,7 @@ import time
 import requests
 
 import config_store
+import fields
 
 ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY", "")
 ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
@@ -134,42 +135,30 @@ def _chat(payload, api_key=None, timeout=60, retries=1):
     raise RuntimeError(last_err or f"调用 {prov} 服务失败")
 
 
-SYSTEM_PROMPT = """你是一个资深招聘数据录入助手。
+def build_system_prompt():
+    """按当前字段配置动态生成大模型抽取提示词，使新增/重命名的字段也能被正确抽取。"""
+    fields_list = fields.field_descriptions()
+    schema_lines = []
+    for key, name, desc in fields_list:
+        schema_lines.append(f'      "{key}": "{name}：{desc}"')
+    schema = ",\n".join(schema_lines)
+    return f"""你是一个资深招聘数据录入助手。
 用户会给你一段自然语言（可能是企业微信群消息、HR 随手记、语音转写文本），其中包含招聘进展。
 请从中抽取所有招聘记录，只输出严格 JSON，不要输出任何多余文字，也不要使用 markdown 代码块。
 
 输出格式：
-{
+{{
   "records": [
-    {
-      "candidate": "候选人姓名，未知则空字符串",
-      "position": "应聘岗位，未知则空字符串",
-      "department": "所属部门/团队，未知则空字符串",
-      "stage": "招聘阶段，只能是以下之一：投递 / 简历初筛 / 笔试 / 一面 / 二面 / 三面 / offer / 入职",
-      "status": "该阶段下的具体状态，尽量从以下选择：进行中 / 已通过 / 待定 / 已淘汰 / 已发offer / 已接受 / 已拒绝；无法匹配则填合适短语，未知则空字符串",
-      "interviewer": "面试官姓名，未知则空字符串",
-      "recruiter": "招聘负责人/HR姓名，未知则空字符串",
-      "channel": "来源渠道，尽量从以下选择：内推 / 猎头 / 校招 / 社招 / 官网 / 招聘平台 / 企业微信群；未知则空字符串",
-      "education": "学历，如 本科/硕士/博士，未知则空字符串",
-      "experience": "工作年限，如 3年，未知则空字符串",
-      "currentCompany": "当前所在公司，未知则空字符串",
-      "expectedSalary": "期望薪资，如 25k，未知则空字符串",
-      "contact": "联系方式(手机或邮箱)，未知则空字符串",
-      "time": "关键时间(面试/入职等)，格式 YYYY-MM-DD HH:mm，未知则空字符串",
-      "remark": "其它备注信息，未知则空字符串",
-      "gender": "候选人性别，如 男/女/未知，未知则空字符串",
-      "age": "候选人年龄(数字)，未知则空字符串",
-      "phone": "候选人手机号，未知则空字符串",
-      "email": "候选人邮箱，未知则空字符串",
-      "expectedCity": "期望工作城市，未知则空字符串",
-      "confidence": 0到1之间的小数，表示本条抽取的可信度
-    }
+    {{
+{schema},
+      "confidence": "0到1之间的小数(字符串)，表示本条抽取的可信度"
+    }}
   ]
-}
+}}
 规则：
 - **逐条列出每一个独立的候选人**：即便同一段话里出现多个姓名/岗位（如「李娜…；王强…；张伟…」），也必须分别为每个人输出一条记录，严禁合并或遗漏；
-- 没有任何招聘信息时，返回 {"records": []}；
-- 不要编造字段，缺失就填空字符串；
+- 没有任何招聘信息时，返回 {{"records": []}}；
+- 不要编造字段，缺失就填空字符串；字段集合以「输出格式」为准，严格按给定字段名输出 JSON key（不要自创 key）；
 - 阶段必须严格从给定枚举中选，不要自创（例如「初试」应归为「一面」）；
 - 状态要符合当前阶段语境（如 offer 阶段常用「已发offer/已接受/已拒绝」）。"""
 
@@ -188,7 +177,7 @@ def _parse_once(text: str, model: str):
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": build_system_prompt()},
             {"role": "user", "content": text},
         ],
         "response_format": {"type": "json_object"},
@@ -335,7 +324,9 @@ def _parse_image_vision(image_bytes: bytes, filename: str):
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "你是招聘信息提取助手。请仔细识别图片中的招聘相关文字（候选人、性别、年龄、岗位、部门、阶段、状态、面试官、渠道、手机号、邮箱、期望城市、时间等），逐字保留原文。"},
+            {"role": "system", "content": "你是招聘信息提取助手。请仔细识别图片中的招聘相关文字（" +
+             "、".join(n for _, n, _ in fields.field_descriptions()) +
+             "），逐字保留原文。"},
             {"role": "user", "content": [
                 {"type": "text", "text": "请提取图片里的招聘信息文字内容，保留关键原文："},
                 {"type": "image_url", "image_url": {"url": data_uri}},

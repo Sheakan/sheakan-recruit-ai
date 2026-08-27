@@ -118,6 +118,16 @@
   /* 移动端：配置弹窗改为底部抽屉 */
   @media(max-width:480px){
     .modal-box{width:100%;max-width:100%;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));position:absolute;bottom:0;left:0;right:0;top:auto;max-height:88vh}
+  /* 字段管理 */
+  .field-mgr{border:1px solid var(--line);border-radius:10px;padding:8px;background:#fbfdff;max-height:260px;overflow:auto}
+  .fm-row{display:flex;gap:6px;align-items:center;margin:4px 0}
+  .fm-row .fm-move{display:flex;flex-direction:column;gap:2px}
+  .fm-row .fm-move button{padding:0 6px;line-height:1.4}
+  .fm-row .fm-name{width:120px;flex:0 0 120px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+  .fm-row .fm-desc{flex:1;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+  .fm-row .fm-en{font-size:12px;color:var(--muted);white-space:nowrap;margin:0}
+  .fm-row .fm-tag{font-size:11px;color:#94a3b8;border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+  .fm-row button.tiny{padding:2px 6px}
   }
 </style>
 </head>
@@ -229,11 +239,7 @@
     </div>
     <div class="scrollx">
       <table id="tbl">
-        <thead>        <tr>
-          <th>候选人</th><th>性别</th><th>年龄</th><th>岗位</th><th>部门</th><th>阶段</th><th>状态</th>
-          <th>面试官</th><th>招聘负责人</th><th>渠道</th><th>手机号</th><th>邮箱</th><th>期望城市</th><th>时间</th><th>来源</th>
-          <th class="sortable" onclick="sortBy('confidence')">置信</th><th>校验</th><th>操作</th>
-        </tr></thead>
+        <thead id="tblHead"></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -303,6 +309,15 @@
     <label>工作表 ID（可选，留空由链接自动识别）</label>
     <input id="cfg-tdsheet" placeholder="链接 ?tab= 之后的字符串">
 
+    <label>字段管理（自定义列名 / 启用禁用 / 新增 / 删除 / 排序）</label>
+    <div id="fieldMgr" class="field-mgr"></div>
+    <p style="font-size:12px;color:var(--muted);margin:2px 0 4px">重命名仅改显示名；新增字段会作为「抽取项」让大模型尝试识别（请在提示词里写清要提取什么）。改完点「保存配置」生效，并同时影响 网页表格、腾讯文档同步、大模型提取 三处。</p>
+    <div style="display:flex;gap:6px;margin:4px 0 2px">
+      <input id="fm-name" placeholder="新字段显示名，如 毕业院校" style="flex:1">
+      <input id="fm-desc" placeholder="提取提示词，如 毕业院校，未知则空" style="flex:2">
+      <button class="ghost" onclick="fmAdd()">+ 新增字段</button>
+    </div>
+
     <label>企业微信自建应用 - corpid</label>
     <input id="cfg-corpid" placeholder="企业微信 corpid">
     <label>企业微信自建应用 - corpsecret</label>
@@ -330,14 +345,42 @@
 
 <script>
 const STAGES = ["投递","简历初筛","笔试","一面","二面","三面","offer","入职"];
-const FIELDS = [
-  {k:"candidate",label:"候选人"},{k:"position",label:"岗位"},{k:"department",label:"部门"},
-  {k:"stage",label:"阶段"},{k:"status",label:"状态"},{k:"interviewer",label:"面试官"},
-  {k:"recruiter",label:"招聘负责人"},{k:"channel",label:"渠道"},{k:"education",label:"学历"},
-  {k:"experience",label:"工作年限"},{k:"currentCompany",label:"当前公司"},{k:"expectedSalary",label:"期望薪资"},
-  {k:"contact",label:"联系方式"},{k:"time",label:"时间"},{k:"remark",label:"备注"},
-  {k:"gender",label:"性别"},{k:"age",label:"年龄"},{k:"phone",label:"手机号"},{k:"email",label:"邮箱"},{k:"expectedCity",label:"期望城市"}
+// 内置默认字段（仅当服务端未配置自定义字段时回退使用）
+const BUILTIN_FIELD_DEFS = [
+  {key:"candidate",name:"候选人",desc:"候选人姓名，未知则空字符串",builtin:true},
+  {key:"position",name:"岗位",desc:"应聘岗位，未知则空字符串",builtin:true},
+  {key:"department",name:"部门",desc:"所属部门/团队，未知则空字符串",builtin:true},
+  {key:"stage",name:"阶段",desc:"招聘阶段，枚举见提示词",builtin:true},
+  {key:"status",name:"状态",desc:"该阶段下的具体状态，未知则空字符串",builtin:true},
+  {key:"interviewer",name:"面试官",desc:"面试官姓名，未知则空字符串",builtin:true},
+  {key:"recruiter",name:"招聘负责人",desc:"招聘负责人/HR姓名，未知则空字符串",builtin:true},
+  {key:"channel",name:"渠道",desc:"来源渠道，如 内推/猎头/校招/社招，未知则空字符串",builtin:true},
+  {key:"education",name:"学历",desc:"学历，如 本科/硕士/博士，未知则空字符串",builtin:true},
+  {key:"experience",name:"工作年限",desc:"工作年限，如 3年，未知则空字符串",builtin:true},
+  {key:"currentCompany",name:"当前公司",desc:"当前所在公司，未知则空字符串",builtin:true},
+  {key:"expectedSalary",name:"期望薪资",desc:"期望薪资，如 25k，未知则空字符串",builtin:true},
+  {key:"contact",name:"联系方式",desc:"联系方式(手机或邮箱)，未知则空字符串",builtin:true},
+  {key:"time",name:"时间",desc:"关键时间(面试/入职等)，格式 YYYY-MM-DD HH:mm，未知则空字符串",builtin:true},
+  {key:"remark",name:"备注",desc:"其它备注信息，未知则空字符串",builtin:true},
+  {key:"gender",name:"性别",desc:"候选人性别，如 男/女/未知，未知则空字符串",builtin:true},
+  {key:"age",name:"年龄",desc:"候选人年龄(数字)，未知则空字符串",builtin:true},
+  {key:"phone",name:"手机号",desc:"候选人手机号，未知则空字符串",builtin:true},
+  {key:"email",name:"邮箱",desc:"候选人邮箱，未知则空字符串",builtin:true},
+  {key:"expectedCity",name:"期望城市",desc:"期望工作城市，未知则空字符串",builtin:true},
 ];
+let CFG_FIELDS = null;   // 服务端返回的字段配置（列表或 null）
+let fieldState = null;   // 字段管理界面的编辑态（保存时随 config 提交）
+
+function fieldDefs(){
+  if(CFG_FIELDS && Array.isArray(CFG_FIELDS) && CFG_FIELDS.length) return CFG_FIELDS;
+  return BUILTIN_FIELD_DEFS.map(f=>({key:f.key,name:f.name,desc:f.desc,builtin:true,enabled:true}));
+}
+function enabledFields(){
+  return fieldDefs().filter(f=>f.enabled!==false).map(f=>({key:f.key,name:f.name}));
+}
+function labelToKeyMap(){
+  const m={}; fieldDefs().forEach(f=>{ m[f.name]=f.key; m[f.key]=f.key; }); return m;
+}
 let records = [];
 // 分页 / 搜索 / 筛选状态
 let page=1, pageSize=50, tblQ="", fStage="", fStatus="", fChannel="";
@@ -366,7 +409,7 @@ function _initCharts(){
 function _setChart(chart, opt){ if(chart && typeof chart.setOption==='function'){ try{ chart.setOption(opt); }catch(e){ console.warn('图表 setOption 失败：',e); } } }
 
 function setStatus(msg, type=''){ if(type===true) type='err'; const s=document.getElementById('status'); s.textContent=msg||''; s.className=type; }
-const SHOW_KEYS=[["candidate","候选人"],["gender","性别"],["age","年龄"],["position","岗位"],["department","部门"],["stage","阶段"],["status","状态"],["channel","渠道"],["phone","手机号"],["email","邮箱"],["expectedCity","期望城市"],["remark","备注"]];
+const SHOW_KEYS=()=>enabledFields().map(f=>[f.key,f.name]);
 function confBadge(r, small){
   const c=r&&r.confidence;
   if(c===undefined||c===null||c==='') return '';
@@ -386,8 +429,9 @@ function issuesBadge(r){
 function showResult(recs){
   const box=document.getElementById('result');
   if(!recs || !recs.length){ box.className='result'; box.innerHTML=''; return; }
-  let h='<h4>✅ 本次成功抽取 '+recs.length+' 条 '+confBadge(recs[0])+'</h4><table><tr>'+SHOW_KEYS.map(k=>'<td class="k">'+k[1]+'</td>').join('')+'</tr>';
-  for(const r of recs){ h+='<tr>'+SHOW_KEYS.map(k=>'<td>'+(r[k[0]]||'<span style="color:#cbd5e1">—</span>')+'</td>').join('')+'</tr>'; }
+  const sk=SHOW_KEYS();
+  let h='<h4>✅ 本次成功抽取 '+recs.length+' 条 '+confBadge(recs[0])+'</h4><table><tr>'+sk.map(k=>'<td class="k">'+k[1]+'</td>').join('')+'</tr>';
+  for(const r of recs){ h+='<tr>'+sk.map(k=>'<td>'+(r[k[0]]||'<span style="color:#cbd5e1">—</span>')+'</td>').join('')+'</tr>'; }
   h+='</table>';
   box.innerHTML=h; box.className='result show';
 }
@@ -553,6 +597,10 @@ async function loadConfig(){
     document.getElementById('tdoc-file').value=_link;   // 同步到主页面输入框
     document.getElementById('tdoc-sheet').value=_sid;
     window.CFG_TDOC={file_id:_fid, sheet_id:_sid};   // 供手动同步回退使用
+    // 字段自定义：读取服务端配置到全局，并初始化字段管理编辑态
+    CFG_FIELDS = v.fields || null;
+    fieldState = JSON.parse(JSON.stringify(fieldDefs()));
+    renderFieldMgr();
     const ck=document.getElementById('cfg-corpid'); ck.value=""; ck.placeholder=_hint(v.wecom_corpid)||"企业 CorpID";
     const cs=document.getElementById('cfg-corpsecret'); cs.value=""; cs.placeholder=_hint(v.wecom_corpsecret)||"企业 CorpSecret";
     const ct=document.getElementById('cfg-token'); ct.value=""; ct.placeholder=_hint(v.wecom_token)||"接收消息 Token";
@@ -562,17 +610,49 @@ async function loadConfig(){
     document.getElementById('cfg-sssheet').value=v.wecom_smartsheet_sheetid||"";
     // 字段映射：由 effective_field_map（key->id）拼成「列名=ID」
     const efm=v.effective_field_map||{};
-    const labelOf={}; FIELDS.forEach(f=>labelOf[f.k]=f.label);
+    const labelOf=labelToKeyMap();
     document.getElementById('cfg-fieldmap').value=Object.keys(efm).map(k=>`${labelOf[k]||k}=${efm[k]||""}`).join("\n");
   }catch(e){}
 }
 
-function openSettings(){ document.getElementById('cfgModal').style.display='block'; }
+function openSettings(){ if(!fieldState) fieldState=JSON.parse(JSON.stringify(fieldDefs())); renderFieldMgr(); document.getElementById('cfgModal').style.display='block'; }
 function closeSettings(){ document.getElementById('cfgModal').style.display='none'; }
+
+// ---------------- 字段管理 ----------------
+function renderFieldMgr(){
+  const box=document.getElementById('fieldMgr'); if(!box) return;
+  if(!fieldState) fieldState=JSON.parse(JSON.stringify(fieldDefs()));
+  let h='';
+  fieldState.forEach((f,i)=>{
+    const isBuiltin=f.builtin;
+    h+=`<div class="fm-row">`+
+      `<span class="fm-move"><button class="tiny" onclick="fmMove(${i},-1)" ${i===0?'disabled':''}>↑</button><button class="tiny" onclick="fmMove(${i},1)" ${i===fieldState.length-1?'disabled':''}>↓</button></span>`+
+      `<input class="fm-name" value="${esc(f.name)}" oninput="fmRename(${i},this.value)" placeholder="显示名">`+
+      `<input class="fm-desc" value="${esc(f.desc||'')}" oninput="fmDesc(${i},this.value)" placeholder="提取提示词（大模型识别依据）">`+
+      `<label class="fm-en"><input type="checkbox" ${f.enabled!==false?'checked':''} onchange="fmToggle(${i},this.checked)">启用</label>`+
+      (isBuiltin? `<span class="fm-tag">内置</span>` : `<button class="tiny danger" onclick="fmDel(${i})">删</button>`)+
+    `</div>`;
+  });
+  box.innerHTML=h;
+}
+function fmAdd(){
+  const name=document.getElementById('fm-name').value.trim();
+  const desc=document.getElementById('fm-desc').value.trim();
+  if(!name){ setStatus('请填写新字段显示名','err'); return; }
+  let key='ext_'+Math.random().toString(36).slice(2,8);
+  fieldState.push({key,name,desc,builtin:false,enabled:true});
+  document.getElementById('fm-name').value=''; document.getElementById('fm-desc').value='';
+  renderFieldMgr();
+}
+function fmMove(i,d){ const j=i+d; if(j<0||j>=fieldState.length) return; const t=fieldState[i]; fieldState[i]=fieldState[j]; fieldState[j]=t; renderFieldMgr(); }
+function fmToggle(i,on){ fieldState[i].enabled=on; }
+function fmDel(i){ fieldState.splice(i,1); renderFieldMgr(); }
+function fmRename(i,v){ fieldState[i].name=v; }
+function fmDesc(i,v){ fieldState[i].desc=v; }
 
 async function saveConfig(){
   // 解析字段映射「列名=ID」或「key=ID」→ {key: id}
-  const labelToKey={}; FIELDS.forEach(f=>{labelToKey[f.label]=f.k; labelToKey[f.k]=f.k;});
+  const labelToKey=labelToKeyMap();
   const fieldIds={};
   document.getElementById('cfg-fieldmap').value.split("\n").forEach(line=>{
     const m=line.trim().match(/^(.+?)\s*[=:]\s*(.+)$/);
@@ -603,6 +683,7 @@ async function saveConfig(){
     image_mode: document.getElementById('cfg-imode').value,
     smartsheet_webhooks: document.getElementById('cfg-webhooks').value.split("\n").map(s=>s.trim()).filter(Boolean),
     smartsheet_field_ids: fieldIds,
+    fields: fieldState || fieldDefs(),
     tencent_docs:{
       mcp_token: document.getElementById('cfg-tdtoken').value.trim(),
       file_id: tdFile,
@@ -700,14 +781,14 @@ let editId=null;
 function editRecord(id){
   const r=records.find(x=>x.id===id); if(!r) return;
   editId=id;
-  document.getElementById('form').innerHTML = FIELDS.map(f=>
-    `<label>${f.label}</label><input id="f-${f.k}" value="${(r[f.k]||'').replace(/"/g,'&quot;')}">`).join('');
+  document.getElementById('form').innerHTML = enabledFields().map(f=>
+    `<label>${esc(f.name)}</label><input id="f-${f.key}" value="${(r[f.key]||'').replace(/"/g,'&quot;')}">`).join('');
   document.getElementById('modal').style.display='block';
 }
 function closeModal(){ document.getElementById('modal').style.display='none'; }
 async function saveEdit(){
   const body={};
-  FIELDS.forEach(f=>{ body[f.k]=document.getElementById('f-'+f.k).value.trim(); });
+  enabledFields().forEach(f=>{ body[f.key]=document.getElementById('f-'+f.key).value.trim(); });
   const r=await fetch('/api/record/'+editId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   if(d.error){ alert(d.error); return; }
@@ -785,7 +866,20 @@ function _fillFilter(el, vals, allLabel){
   el.innerHTML=html;
   if(uniq.includes(cur)) el.value=cur; else el.value="";
 }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+function buildTableHead(){
+  const head=document.getElementById('tblHead');
+  if(!head) return;
+  const ef=enabledFields();
+  let h='<tr>';
+  ef.forEach(f=>{ h+=`<th class="sortable" onclick="sortBy('${f.key}')">${esc(f.name)}</th>`; });
+  h+='<th class="sortable" onclick="sortBy(\'confidence\')">置信</th><th>校验</th><th>操作</th></tr>';
+  head.innerHTML=h;
+}
+
 function render(){
+  buildTableHead();
   const total=records.length;
   // 生成去重候选人标识：优先 phone / email，否则 candidate+position（防止同名）
   const keyOf=r=> (r.phone?('p:'+r.phone):(r.email?('e:'+r.email):('n:'+(r.candidate||'')+'|'+(r.position||''))));
@@ -907,26 +1001,23 @@ function render(){
   if(pi) pi.textContent=`第 ${page} / ${totalPages} 页（每页 ${pageSize}）`;
 
   const tb=document.querySelector("#tbl tbody");
+  const ef=enabledFields();
+  const colCount=ef.length+3;
   if(!paged.length){
-    tb.innerHTML='<tr><td colspan="18"><div class="empty"><div class="big">📭</div>'+
+    tb.innerHTML='<tr><td colspan="'+colCount+'"><div class="empty"><div class="big">📭</div>'+
       (records.length? '当前筛选条件下没有匹配的记录' : '暂无数据，点「载入演示数据」或粘贴招聘信息开始体验')+
       '</div></td></tr>';
     return;
   }
   tb.innerHTML=paged.map(r=>{
     const st=r.stage||""; const cls="t-"+(st==="offer"?"offer":st);
-    return `<tr>
-      <td>${r.candidate||"-"}</td>
-      <td>${r.gender||"-"}</td><td>${r.age||"-"}</td>
-      <td>${r.position||"-"}</td><td>${r.department||"-"}</td>
-      <td><span class="tag ${cls}">${st||"-"}</span></td><td>${r.status||"-"}</td>
-      <td>${r.interviewer||"-"}</td><td>${r.recruiter||"-"}</td><td>${r.channel||"-"}</td>
-      <td>${r.phone||"-"}</td><td>${r.email||"-"}</td><td>${r.expectedCity||"-"}</td>
-      <td>${r.time||"-"}</td><td class="src">${r.source||"-"}</td>
-      <td>${confBadge(r,true)}</td>
-      <td>${issuesBadge(r)}</td>
-      <td><button class="tiny" onclick="editRecord('${r.id}')">编辑</button><button class="tiny danger" onclick="delRecord('${r.id}')">删</button></td>
-    </tr>`;
+    let cells=ef.map(f=>{
+      if(f.key==="stage") return `<td><span class="tag ${cls}">${r[f.key]||"-"}</span></td>`;
+      if(f.key==="source") return `<td class="src">${r[f.key]||"-"}</td>`;
+      return `<td>${r[f.key]||"-"}</td>`;
+    }).join("");
+    return `<tr>${cells}<td>${confBadge(r,true)}</td><td>${issuesBadge(r)}</td>`+
+      `<td><button class="tiny" onclick="editRecord('${r.id}')">编辑</button><button class="tiny danger" onclick="delRecord('${r.id}')">删</button></td></tr>`;
   }).join("");
 }
 

@@ -16,7 +16,7 @@ import os
 import json
 import requests
 import config_store
-from fields import HEADERS_CN, KEYS
+import fields
 
 MCP_URL = os.environ.get("TENCENT_DOCS_MCP_URL", "https://docs.qq.com/openapi/mcp")
 MCP_TOKEN = os.environ.get("TENCENT_DOCS_MCP_TOKEN", "")
@@ -114,7 +114,7 @@ def _build_rows(records):
     rows = []
     for r in records:
         vals = []
-        for k in KEYS:
+        for k in fields.get_keys():
             v = r.get(k)
             vals.append("" if v is None else str(v))
         rows.append(vals)
@@ -123,7 +123,7 @@ def _build_rows(records):
 
 def _build_markdown(records):
     rows = _build_rows(records)
-    cols = HEADERS_CN
+    cols = fields.get_headers()
     lines = ["| " + " | ".join(cols) + " |",
              "| " + " | ".join(["---"] * len(cols)) + " |"]
     for vals in rows:
@@ -134,12 +134,14 @@ def _build_markdown(records):
 def _build_sheet_cells(records, header_row, data_start):
     """构造 sheet.set_range_value 的 values：表头行 + 数据行。
     每个单元格形如 {row,col,value_type,string_value|number_value}。"""
+    headers = fields.get_headers()
+    keys = fields.get_keys()
     cells = []
-    for c, h in enumerate(HEADERS_CN):
+    for c, h in enumerate(headers):
         cells.append({"row": header_row, "col": c, "value_type": "STRING", "string_value": h})
     for i, r in enumerate(records):
         rr = data_start + i
-        for c, k in enumerate(KEYS):
+        for c, k in enumerate(keys):
             v = r.get(k)
             if v is None or v == "":
                 cells.append({"row": rr, "col": c, "value_type": "STRING", "string_value": ""})
@@ -178,19 +180,20 @@ def _extract_sheet_id(info):
 
 def _detect_layout(token, session, file_id, sheet_id):
     """探测表头所在行与数据起始行：兼容 A1 为标题、第2行为表头的情况（如『招聘候选人信息表』标题+A1表头）。"""
-    head_n = min(len(HEADERS_CN), 12)
+    head_n = min(len(fields.get_headers()), 12)
 
     def match(row):
         parts = [x.strip() for x in row.split(",")]
         if len(parts) < head_n:
             return False
-        return all(parts[i] == HEADERS_CN[i] for i in range(head_n))
+        headers = fields.get_headers()
+        return all(parts[i] == headers[i] for i in range(head_n))
 
     try:
         r = call_tool(token, "sheet.get_cell_data",
                       {"file_id": file_id, "sheet_id": sheet_id,
                        "start_row": 0, "start_col": 0,
-                       "end_row": 3, "end_col": len(HEADERS_CN),
+                       "end_row": 3, "end_col": len(fields.get_headers()),
                        "return_csv": True}, session)
         txt = ""
         if isinstance(r, dict):
@@ -290,8 +293,10 @@ def push(records, file_id=None, sheet_id=None):
     if "smartsheet.add_records" in names:
         recs = []
         for r in records:
-            fv = [{"title": HEADERS_CN[i], "value": ("" if r.get(KEYS[i]) is None else str(r.get(KEYS[i])))}
-                  for i in range(len(KEYS))]
+            headers = fields.get_headers()
+            keys = fields.get_keys()
+            fv = [{"title": headers[i], "value": ("" if r.get(keys[i]) is None else str(r.get(keys[i])))}
+                  for i in range(len(keys))]
             recs.append({"field_values": fv})
         try:
             res = call_tool(token, "smartsheet.add_records", {"file_id": file_id, "records": recs}, session)

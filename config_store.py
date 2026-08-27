@@ -32,6 +32,7 @@ DEFAULT = {
         "file_id": "",          # 目标表格 fileId（粘贴文档链接即可，保存时解析）
         "sheet_id": "",         # 目标工作表 sheetId（链接 ?tab= 之后，可空由链接识别）
     },
+    "fields": None,             # 字段自定义配置（列表，见 fields.py）；None 表示沿用内置默认
 }
 
 
@@ -139,6 +140,7 @@ def mask(cfg=None):
             "tdocs_sheet_id_raw": tdoc.get("sheet_id", ""),
             "wecom_smartsheet_docid": w.get("smartsheet_docid", ""),
             "wecom_smartsheet_sheetid": w.get("smartsheet_sheetid", ""),
+            "fields": cfg.get("fields"),   # 字段自定义（None 表示沿用内置默认）
         },
     }
 
