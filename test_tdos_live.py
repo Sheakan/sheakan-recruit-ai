@@ -38,8 +38,10 @@ sample = [{
 }]
 
 print(f"→ 目标表格 file_id={'（未指定，将新建 Excel 快照）' if not tdocs.FILE_ID else tdocs.FILE_ID}")
-pushed, errs = tdocs.push(sample, file_id=tdocs.FILE_ID or None, sheet_id=tdocs.SHEET_ID or None)
+pushed, errs, doc_url = tdocs.push(sample, file_id=tdocs.FILE_ID or None, sheet_id=tdocs.SHEET_ID or None)
 print("→ 推送条数:", pushed)
+if doc_url:
+    print("→ 文档链接:", doc_url)
 if errs:
     print("→ 错误信息:")
     for e in errs:
