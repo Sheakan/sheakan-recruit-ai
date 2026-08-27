@@ -84,7 +84,7 @@ def _provider(model):
     return ZHIPU_URL, (ZHIPU_API_KEY or config_store.load().get("zhipu_api_key", "")), "智谱"
 
 
-def _chat(payload, api_key=None, timeout=30, retries=1):
+def _chat(payload, api_key=None, timeout=60, retries=1):
     """统一的模型调用：按 model 自动选择供应商与 Key，负责友好错误转换与 429 限流重试。
 
     所有对外的报错都转换为「人话」，绝不直接把后端 HTTP 异常透传到前端。
@@ -194,7 +194,8 @@ def _parse_once(text: str, model: str):
         "response_format": {"type": "json_object"},
         "temperature": 0.2,
     }
-    resp = _chat(payload, timeout=30)
+    # 长文本（如大段简历/职位 JD）生成较慢，给足超时；失败自动重试 1 次
+    resp = _chat(payload, timeout=120, retries=1)
     content = resp["choices"][0]["message"]["content"]
     data = extract_json(content)
     return data.get("records", [])
@@ -214,6 +215,35 @@ def _dedupe(records):
         if key in seen:
             continue
         seen.add(key)
+        out.append(r)
+    return out
+
+
+# 文档自带表头里常出现的列名；若模型把这些表头当成数据返回，应直接丢弃
+HEADER_WORDS = {
+    "候选人", "姓名", "岗位", "部门", "阶段", "状态", "面试官", "招聘负责人", "hr",
+    "渠道", "学历", "工作年限", "当前公司", "期望薪资", "薪资", "联系方式", "手机",
+    "手机号", "邮箱", "期望城市", "时间", "备注", "来源", "性别", "年龄", "电话", "微信",
+}
+
+
+def _clean_records(records):
+    """清洗明显无用的脏记录：
+    - 把「文档表头行」误当成数据（candidate/position 等于列名）；
+    - 既没有姓名、也没有岗位、手机、邮箱的空记录。
+    """
+    out = []
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        cand = (r.get("candidate") or "").strip()
+        pos = (r.get("position") or "").strip()
+        if cand in HEADER_WORDS or pos in HEADER_WORDS:
+            continue
+        if (not cand and not pos
+                and not (r.get("phone") or "").strip()
+                and not (r.get("email") or "").strip()):
+            continue
         out.append(r)
     return out
 
@@ -242,7 +272,7 @@ def parse_text(text: str, api_key=None, model=None):
         for part in segs:
             recs += _parse_once(part, model)
         recs = _dedupe(recs)
-    return recs
+    return _clean_records(recs)
 
 
 def _ocr_text(image_bytes):
@@ -313,7 +343,7 @@ def _parse_image_vision(image_bytes: bytes, filename: str):
         ],
         "temperature": 0.2,
     }
-    data = _chat(payload, timeout=40)
+    data = _chat(payload, timeout=60)
     desc = data["choices"][0]["message"]["content"]
     if not desc.strip():
         return []
@@ -353,7 +383,7 @@ def ask_question(question: str, records: list, api_key=None, model=None):
         ],
         "temperature": 0.3,
     }
-    resp = _chat(payload, timeout=30)
+    resp = _chat(payload, timeout=60)
     return resp["choices"][0]["message"]["content"].strip()
 
 
@@ -376,5 +406,5 @@ def gen_insight(records: list, api_key=None, model=None):
         ],
         "temperature": 0.4,
     }
-    resp = _chat(payload, timeout=40)
+    resp = _chat(payload, timeout=60)
     return resp["choices"][0]["message"]["content"].strip()
