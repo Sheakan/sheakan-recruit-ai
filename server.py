@@ -29,8 +29,9 @@ TENCENT_DOCS_REDIRECT_URI = os.environ.get("TENCENT_DOCS_REDIRECT_URI", "")  # �
 # 全局配置（由界面 POST /api/config 热更新；启动时从 config.json 载入）
 CFG = config_store.load()
 # 同步腾讯文档模块级凭证（兼容其 env 读取方式）
-tdocs.CLIENT_ID = os.environ.get("TENCENT_DOCS_CLIENT_ID") or CFG["tencent_docs"]["client_id"]
-tdocs.CLIENT_SECRET = os.environ.get("TENCENT_DOCS_CLIENT_SECRET") or CFG["tencent_docs"]["client_secret"]
+tdocs.MCP_TOKEN = os.environ.get("TENCENT_DOCS_MCP_TOKEN") or CFG["tencent_docs"]["mcp_token"]
+tdocs.FILE_ID = os.environ.get("TENCENT_DOCS_FILE_ID") or CFG["tencent_docs"]["file_id"]
+tdocs.SHEET_ID = os.environ.get("TENCENT_DOCS_SHEET_ID") or CFG["tencent_docs"]["sheet_id"]
 
 
 # ---------------- 存储 ----------------
@@ -233,29 +234,17 @@ def api_config_save():
                 _set_wecom(cfg, k, data["wecom"][k])
     if isinstance(data.get("tencent_docs"), dict):
         td = data["tencent_docs"]
-        for k in ("client_id", "client_secret", "file_id", "sheet_id"):
+        for k in ("file_id", "sheet_id"):
             if k in td:
                 _set_tdoc(cfg, k, td[k])
-        # 个人直连令牌模式：用户直接填入 access_token + open_id，无需 OAuth 回调
-        if "access_token" in td and (td["access_token"] or "").strip():
-            tok = {
-                "access_token": td["access_token"].strip(),
-                "open_id": (td.get("open_id") or "").strip(),
-                "refresh_token": "",
-                "expires_at": int(time.time()) + 365 * 86400,  # 个人令牌长期有效，置远过期
-            }
-            config_store.set_tdocs_token(tok)
-        elif "open_id" in td:
-            # 仅更新 open_id，保留现有令牌（用户没重新填 token 时）
-            cur = config_store.get_tdocs_token() or {"access_token": "", "open_id": "", "refresh_token": "", "expires_at": 0}
-            cur["open_id"] = (td.get("open_id") or "").strip()
-            config_store.set_tdocs_token(cur)
+        # 官方 MCP 模式：用户填入单个「个人 Token」，无需 client_secret / OAuth 回调
+        if "mcp_token" in td:
+            _set_tdoc(cfg, "mcp_token", td["mcp_token"])
 
     config_store.save(cfg)
     global CFG
     CFG = cfg
-    tdocs.CLIENT_ID = cfg["tencent_docs"]["client_id"]
-    tdocs.CLIENT_SECRET = cfg["tencent_docs"]["client_secret"]
+    tdocs.MCP_TOKEN = cfg["tencent_docs"]["mcp_token"]
     tdocs.FILE_ID = cfg["tencent_docs"]["file_id"]
     tdocs.SHEET_ID = cfg["tencent_docs"]["sheet_id"]
     return jsonify(config_store.mask(CFG))
@@ -299,57 +288,11 @@ def api_poll_smartsheet():
     return jsonify({"fetched": len(recs), "added": len(added), "skipped": skipped, "merged": merged})
 
 
-# ---------------- 腾讯文档 OAuth 与同步 ----------------
-def _tdocs_redirect_uri():
-    """构造腾讯文档 OAuth 回调地址。
-
-    关键坑：CloudBase/SCF 网关在前面做 TLS 终止，后端 Flask 实际收到的是
-    http:// 请求，request.url_root 因此生成 http://... 的回调地址；但腾讯文档
-    OAuth 强制要求 redirect_uri 必须是 https，用 http 会被直接拒绝（400）。
-    所以这里把 http:// 统一升级为 https://。
-    """
-    if TENCENT_DOCS_REDIRECT_URI:
-        return TENCENT_DOCS_REDIRECT_URI
-    root = request.url_root
-    if root.startswith("http://"):
-        root = "https://" + root[len("http://"):]
-    return root.rstrip("/") + "/tdocs/callback"
-
-
-@app.route("/tdocs/auth")
-def tdocs_auth():
-    """跳转到腾讯文档授权页，引导用户完成 OAuth 授权。
-
-    注意：部署在云函数/API 网关后，服务端直接 redirect() 外部绝对 URL 时，
-    网关会对 Location 头二次编码（路径 / 变成 %2F），导致腾讯文档收到畸形 URL（400）。
-    因此改为返回一段 HTML，由浏览器端 JS 执行跳转，绕过网关对 Location 的改写。
-    """
-    if not (tdocs.CLIENT_ID and tdocs.CLIENT_SECRET):
-        return "未配置腾讯文档应用凭证：请在「配置我的凭证」中填写 Client ID / Client Secret 后重试", 501
-    url = tdocs.authorize_url(_tdocs_redirect_uri())
-    return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>跳转中…</title></head>
-<body style="font-family:sans-serif;padding:40px;color:#475569">正在跳转至腾讯文档授权页…（若未自动跳转，<a id="a" href="{url}">请点击这里</a>）
-<script>window.location.href={json.dumps(url)};</script>
-</body></html>"""
-
-
-@app.route("/tdocs/callback")
-def tdocs_callback():
-    """授权回调：用 code 换取 token 并持久化，随后回到主页。"""
-    code = request.args.get("code", "")
-    if not code:
-        return "授权失败：回调缺少 code 参数", 400
-    try:
-        tdocs.exchange_code(code, _tdocs_redirect_uri())
-    except Exception as e:
-        return f"授权失败：{e}", 500
-    return redirect("/?tdocs=connected")
-
-
+# ---------------- 腾讯文档同步（官方 MCP） ----------------
 @app.route("/api/tdocs/status")
 def api_tdocs_status():
     return jsonify({
-        "configured": bool(tdocs.CLIENT_ID),
+        "configured": tdocs.enabled(),
         "authorized": tdocs.enabled(),
         "fileId": bool(tdocs.FILE_ID),
     })
@@ -357,11 +300,9 @@ def api_tdocs_status():
 
 @app.route("/api/tdocs/sync", methods=["POST"])
 def api_tdocs_sync():
-    """把本地已有记录全量同步到腾讯文档在线表格。fileId/sheetId 可由请求体覆盖。"""
-    if not tdocs.CLIENT_ID:
-        return jsonify({"error": "未配置腾讯文档 Client ID：请在「配置我的凭证」中填写"}), 400
-    if not tdocs.get_token():
-        return jsonify({"error": "未配置有效令牌：请在「配置我的凭证」填入 Access Token + Open ID 后保存，再点「连接腾讯文档」"}), 400
+    """把本地已有记录同步到腾讯文档（经官方 MCP）。fileId/sheetId 可由请求体覆盖。"""
+    if not tdocs.enabled():
+        return jsonify({"error": "未配置腾讯文档 Token：请在「配置我的凭证」填入 MCP Token（https://docs.qq.com/open/auth/mcp.html 获取）"}), 400
     data = request.get_json(silent=True) or {}
     pushed, errs = tdocs.push(load_store(), data.get("fileId") or None, data.get("sheetId") or None)
     return jsonify({"pushed": pushed, "errors": errs})

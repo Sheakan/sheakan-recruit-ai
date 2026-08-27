@@ -28,14 +28,9 @@ DEFAULT = {
         "smartsheet_sheetid": "",   # 企业微信智能表 sheetid
     },
     "tencent_docs": {
-        "client_id": "",
-        "client_secret": "",
+        "mcp_token": "",        # 腾讯文档官方 MCP 个人 Token（https://docs.qq.com/open/auth/mcp.html 获取）
         "file_id": "",          # 目标表格 fileId（粘贴文档链接即可，保存时解析）
         "sheet_id": "",         # 目标工作表 sheetId（链接 ?tab= 之后，可空由链接识别）
-        "access_token": "",     # 个人直连令牌（存于 config.json，与配置同生命周期）
-        "open_id": "",
-        "refresh_token": "",
-        "expires_at": 0,
     },
 }
 
@@ -79,10 +74,8 @@ def load():
     for k, envk in env_map.items():
         if not w[k]:
             w[k] = os.environ.get(envk, "")
-    if not cfg["tencent_docs"]["client_id"]:
-        cfg["tencent_docs"]["client_id"] = os.environ.get("TENCENT_DOCS_CLIENT_ID", "")
-    if not cfg["tencent_docs"]["client_secret"]:
-        cfg["tencent_docs"]["client_secret"] = os.environ.get("TENCENT_DOCS_CLIENT_SECRET", "")
+    if not cfg["tencent_docs"]["mcp_token"]:
+        cfg["tencent_docs"]["mcp_token"] = os.environ.get("TENCENT_DOCS_MCP_TOKEN", "")
     if not cfg["tencent_docs"]["file_id"]:
         cfg["tencent_docs"]["file_id"] = os.environ.get("TENCENT_DOCS_FILE_ID", "")
     if not cfg["tencent_docs"]["sheet_id"]:
@@ -93,36 +86,6 @@ def load():
 def save(cfg):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
-
-
-# ---------------- 腾讯文档 OAuth token ----------------
-def get_tdocs_token():
-    """读取腾讯文档令牌；未授权返回 None。
-
-    存于 config.json 的 tencent_docs 段，与界面配置同生命周期，
-    避免云函数/云托管容器临时磁盘重启后 token 文件丢失导致「已配置却未授权」。"""
-    cfg = load()
-    t = cfg["tencent_docs"]
-    if not t.get("access_token"):
-        return None
-    return {
-        "access_token": t["access_token"],
-        "open_id": t.get("open_id", ""),
-        "refresh_token": t.get("refresh_token", ""),
-        "expires_at": t.get("expires_at", 0),
-    }
-
-
-def set_tdocs_token(tok):
-    """持久化腾讯文档令牌到 config.json。
-    tok 可为完整令牌对象；调用方需保证 access_token 为非空真实值（空则不更新，保留现有）。"""
-    cfg = load()
-    if tok and tok.get("access_token"):
-        cfg["tencent_docs"]["access_token"] = tok.get("access_token", "")
-        cfg["tencent_docs"]["open_id"] = tok.get("open_id", "")
-        cfg["tencent_docs"]["refresh_token"] = tok.get("refresh_token", "")
-        cfg["tencent_docs"]["expires_at"] = tok.get("expires_at", 0)
-        save(cfg)
 
 
 def mask(cfg=None):
@@ -152,9 +115,9 @@ def mask(cfg=None):
         "wecom": bool(w.get("corpid") and w.get("corpsecret") and w.get("token") and w.get("aes_key")),
         "smartsheet": len(cfg.get("smartsheet_webhooks") or []) > 0,
         "smartsheet_count": len(cfg.get("smartsheet_webhooks") or []),
-        "tdocs": bool(tdoc.get("access_token")),
-        "tdocs_configured": bool(tdoc.get("client_id")),
-        "tdocs_configured_target": bool(tdoc.get("file_id") and tdoc.get("sheet_id")),
+        "tdocs": bool(tdoc.get("mcp_token")),
+        "tdocs_configured": bool(tdoc.get("mcp_token")),
+        "tdocs_configured_target": bool(tdoc.get("file_id")),
         "values": {
             "zhipu_api_key": _m(cfg.get("zhipu_api_key")),
             "zhipu_model": cfg.get("zhipu_model", ""),
@@ -169,10 +132,7 @@ def mask(cfg=None):
             "wecom_token": _m(w.get("token")),
             "wecom_aes_key": _m(w.get("aes_key")),
             "wecom_agentid": w.get("agentid", ""),
-            "tdocs_client_id": tdoc.get("client_id", ""),          # 非敏感，原值回填
-            "tdocs_client_secret": _m(tdoc.get("client_secret")),
-            "tdocs_access_token": _m(tdoc.get("access_token")),  # 仅脱敏展示，前端不回填
-            "tdocs_open_id": tdoc.get("open_id", ""),              # 非敏感，原值回填
+            "tdocs_mcp_token": _m(tdoc.get("mcp_token")),          # 仅脱敏展示，前端不回填
             "tdocs_file_id": tdoc.get("file_id", ""),
             "tdocs_sheet_id": tdoc.get("sheet_id", ""),
             "tdocs_file_id_raw": tdoc.get("file_id", ""),
@@ -181,6 +141,26 @@ def mask(cfg=None):
             "wecom_smartsheet_sheetid": w.get("smartsheet_sheetid", ""),
         },
     }
+
+
+def get_tdocs_token():
+    """读取腾讯文档令牌（兼容旧调用）；现统一用 mcp_token，故返回 None 表示未配置。"""
+    return None
+
+
+def set_tdocs_token(tok):
+    """兼容旧调用：MCP 模式下令牌由 mcp_token 字段承载，此处不再单独持久化。"""
+    return None
+
+
+def get_tdocs_token():
+    """读取腾讯文档令牌（兼容旧调用）；现统一用 mcp_token，故返回 None 表示未配置。"""
+    return None
+
+
+def set_tdocs_token(tok):
+    """兼容旧调用：MCP 模式下令牌由 mcp_token 字段承载，此处不再单独持久化。"""
+    return None
 
 
 def get_wxcrypt(cfg=None):

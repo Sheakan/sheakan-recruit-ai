@@ -1,189 +1,250 @@
 # -*- coding: utf-8 -*-
-"""腾讯文档在线表格写入适配器：OAuth2 授权后调用 batchUpdate 批量写入（全量覆盖，天然幂等）。"""
+"""腾讯文档同步适配器（官方 MCP 版）。
+
+改用腾讯文档官方 MCP（Model Context Protocol），个人开发者无需企业资质：
+  - 令牌：单个「个人 Token」，从 https://docs.qq.com/open/auth/mcp.html 获取
+  - 端点：https://docs.qq.com/openapi/mcp
+  - 鉴权：HTTP 头 Authorization: <Token>（注意不是 Access-Token / Client-Id）
+  - 协议：JSON-RPC 2.0 over Streamable HTTP（响应可能是 application/json 或 text/event-stream）
+
+写入策略（运行时按「工具实际 schema」动态拼参数，避免把参数名写死）：
+  1) 若配置了目标表格 file_id，优先用 batch_update_sheet_range 写入（全量覆盖式）；
+  2) 否则兜底用 create_excel_by_markdown 新建一个 Excel 快照。
+两种工具都不存在时，返回可用工具清单，便于据此微调参数。
+"""
 import os
-import time
-import urllib.parse
+import json
 import requests
 import config_store
 from fields import HEADERS_CN, KEYS
 
-CLIENT_ID = os.environ.get("TENCENT_DOCS_CLIENT_ID", "")
-CLIENT_SECRET = os.environ.get("TENCENT_DOCS_CLIENT_SECRET", "")
+MCP_URL = os.environ.get("TENCENT_DOCS_MCP_URL", "https://docs.qq.com/openapi/mcp")
+MCP_TOKEN = os.environ.get("TENCENT_DOCS_MCP_TOKEN", "")
 FILE_ID = os.environ.get("TENCENT_DOCS_FILE_ID", "")
 SHEET_ID = os.environ.get("TENCENT_DOCS_SHEET_ID", "")
-REDIRECT_URI = os.environ.get("TENCENT_DOCS_REDIRECT_URI", "")
-
-AUTH_URL = "https://docs.qq.com/oauth/v2/authorize"
-TOKEN_URL = "https://docs.qq.com/oauth/v2/token"
-API_BASE = "https://docs.qq.com/openapi/spreadsheet/v3/files"
 
 
-# ---------------- Token 管理 ----------------
-def _load_token():
-    return config_store.get_tdocs_token()
+# ---------------- 配置读取 ----------------
+def _cfg():
+    return config_store.load().get("tencent_docs", {})
 
 
-def _save_token(tok):
-    config_store.set_tdocs_token(tok)
+def _token():
+    # 环境变量优先，其次模块级全局（server.py 注入），其次界面配置
+    return (os.environ.get("TENCENT_DOCS_MCP_TOKEN")
+            or MCP_TOKEN
+            or _cfg().get("mcp_token") or "").strip()
 
 
 def enabled():
-    """是否已具备有效令牌（个人直连令牌 或 OAuth 授权均可）。
-
-    个人令牌模式：用户直接在界面填入 access_token + open_id，无需 client_secret、无需 OAuth 回调。
-    OAuth 模式：通过 /tdocs/auth 换取 token 后写入同一份存储。
-    """
-    tok = _load_token()
-    return bool(tok and tok.get("access_token") and CLIENT_ID)
+    """是否已具备可写入的令牌。"""
+    return bool(_token())
 
 
-def authorize_url(redirect_uri, state="recruitmind"):
-    return AUTH_URL + "?" + urllib.parse.urlencode({
-        "client_id": CLIENT_ID,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "all",
-        "state": state,
-    })
-
-
-def exchange_code(code, redirect_uri):
-    """用授权码换取 token，持久化到 config.json（与界面配置同生命周期）。"""
-    r = requests.get(TOKEN_URL, params={
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": redirect_uri,
-        "grant_type": "authorization_code",
-        "code": code,
-    }, timeout=15)
-    d = r.json()
-    if "access_token" not in d:
-        raise RuntimeError(d.get("error_description") or d.get("msg") or str(d))
-    tok = {
-        "access_token": d["access_token"],
-        "open_id": d.get("user_id") or d.get("open_id", ""),
-        "refresh_token": d.get("refresh_token", ""),
-        "expires_at": int(time.time()) + int(d.get("expires_in", 2592000)),
-    }
-    _save_token(tok)
-    return tok
-
-
-def refresh_token(tok):
-    """用 refresh_token 换新 token；失败返回 None。"""
-    if not (CLIENT_ID and CLIENT_SECRET and tok.get("refresh_token")):
+# ---------------- MCP 协议层（JSON-RPC over Streamable HTTP）----------------
+def _parse_response(resp):
+    """兼容 application/json 与 text/event-stream(SSE) 两种响应。"""
+    ctype = resp.headers.get("Content-Type", "")
+    text = resp.text or ""
+    if "text/event-stream" in ctype:
+        last = None
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("data:"):
+                payload = line[len("data:"):].strip()
+                if payload:
+                    try:
+                        last = json.loads(payload)
+                    except Exception:
+                        pass
+        return last
+    if not text:
         return None
     try:
-        r = requests.get(TOKEN_URL, params={
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "grant_type": "refresh_token",
-            "refresh_token": tok["refresh_token"],
-        }, timeout=15)
-        d = r.json()
-        if "access_token" not in d:
-            return None
-        new = {
-            "access_token": d["access_token"],
-            "open_id": d.get("user_id") or d.get("open_id") or tok.get("open_id", ""),
-            "refresh_token": d.get("refresh_token") or tok.get("refresh_token", ""),
-            "expires_at": int(time.time()) + int(d.get("expires_in", 2592000)),
-        }
-        _save_token(new)
-        return new
+        return resp.json()
     except Exception:
         return None
 
 
-def get_token():
-    """返回有效 token，临近过期则自动刷新；无则返回 None。"""
-    tok = _load_token()
-    if not tok:
-        return None
-    if tok.get("expires_at", 0) - 120 < time.time():
-        tok = refresh_token(tok)
-    return tok
-
-
-# ---------------- 写入 ----------------
-def _headers(tok):
-    return {
-        "Access-Token": tok["access_token"],
-        "Client-Id": CLIENT_ID,
-        "Open-Id": tok["open_id"],
+def _rpc(token, method, params=None, req_id=1, session_id=None, is_notification=False, timeout=30):
+    """发送一次 JSON-RPC 请求，返回 (result_json, session_id)。"""
+    headers = {
+        "Authorization": token,
         "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
     }
+    if session_id:
+        headers["Mcp-Session-Id"] = session_id
+    body = {"jsonrpc": "2.0", "method": method}
+    if not is_notification:
+        body["id"] = req_id
+    if params is not None:
+        body["params"] = params
+    resp = requests.post(MCP_URL, headers=headers, json=body, timeout=timeout)
+    new_session = resp.headers.get("Mcp-Session-Id") or session_id
+    return _parse_response(resp), new_session
 
 
-def _cell(v):
-    return {"cellValue": {"text": "" if v is None else str(v)}}
+def _initialize(token):
+    """完成 MCP 握手，返回后续调用要用的 session_id。"""
+    data, session = _rpc(token, "initialize", {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {},
+        "clientInfo": {"name": "recruit-ai", "version": "1.0"},
+    }, req_id=1)
+    if data and data.get("error"):
+        raise RuntimeError("MCP initialize 失败：" + json.dumps(data["error"], ensure_ascii=False))
+    # 通知服务端初始化完成（无需响应）
+    _rpc(token, "notifications/initialized", {}, is_notification=True, session_id=session)
+    return session
 
 
-def _build_operations(records, sheet_id):
-    """构造 batchUpdate 的 requests：表头(1 操作) + 数据(每 1000 行 1 操作)。"""
-    header_op = {
-        "updateRangeRequest": {
-            "sheetId": sheet_id,
-            "gridData": {
-                "startRow": 0,
-                "startColumn": 0,
-                "rows": [{"values": [_cell(c) for c in HEADERS_CN]}],
-            },
-        }
-    }
-    data_ops = []
-    chunk_size = 1000
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i:i + chunk_size]
-        rows = [{"values": [_cell(r.get(k)) for k in KEYS]} for r in chunk]
-        data_ops.append({
-            "updateRangeRequest": {
-                "sheetId": sheet_id,
-                "gridData": {
-                    "startRow": 1 + i,
-                    "startColumn": 0,
-                    "rows": rows,
-                },
-            }
-        })
-    return [header_op] + data_ops
+def list_tools(token, session):
+    data, _ = _rpc(token, "tools/list", {}, req_id=2, session_id=session)
+    return (data or {}).get("result", {}).get("tools", [])
 
 
+def call_tool(token, name, arguments, session):
+    data, _ = _rpc(token, "tools/call", {"name": name, "arguments": arguments}, req_id=3, session_id=session)
+    return (data or {}).get("result")
+
+
+# ---------------- 参数拼装（按运行时 schema 动态映射）----------------
+def _build_rows(records):
+    rows = []
+    for r in records:
+        vals = []
+        for k in KEYS:
+            v = r.get(k)
+            vals.append("" if v is None else str(v))
+        rows.append(vals)
+    return rows
+
+
+def _build_markdown(records):
+    rows = _build_rows(records)
+    cols = HEADERS_CN
+    lines = ["| " + " | ".join(cols) + " |",
+             "| " + " | ".join(["---"] * len(cols)) + " |"]
+    for vals in rows:
+        lines.append("| " + " | ".join(vals) + " |")
+    return "\n".join(lines)
+
+
+def _pick(props, *candidates):
+    for c in candidates:
+        if c in props:
+            return c
+    return None
+
+
+def _map_range_args(props, file_id, sheet_id, records):
+    """把我们的数据映射到 batch_update_sheet_range 的参数（按属性名实际存在与否）。"""
+    rows = _build_rows(records)
+    values = [list(HEADERS_CN)] + rows
+    args = {}
+    k = _pick(props, "file_id", "doc_id", "fileId", "docId")
+    if k:
+        args[k] = file_id
+    k = _pick(props, "sheet_id", "sheetId")
+    if k:
+        args[k] = sheet_id or ""
+    k = _pick(props, "range", "rangeA1", "a1Range")
+    if k:
+        args[k] = "A1"
+    k = _pick(props, "values", "data", "cells")
+    if k:
+        args[k] = values
+    k = _pick(props, "valueInputOption", "value_input_option")
+    if k:
+        args[k] = "USER_ENTERED"
+    k = _pick(props, "markdown", "content", "markdownContent")
+    if k and not any(x in args for x in ("values", "data", "cells")):
+        args[k] = _build_markdown(records)
+    return args or None
+
+
+def _map_create_args(props, records):
+    md = _build_markdown(records)
+    args = {}
+    k = _pick(props, "markdown", "content", "markdownContent")
+    if k:
+        args[k] = md
+    k = _pick(props, "title", "name", "fileName")
+    if k:
+        args[k] = "招聘数据同步快照"
+    k = _pick(props, "parent_id", "parentId", "folder_id")
+    if k:
+        args[k] = ""
+    return args or None
+
+
+# ---------------- 写入入口 ----------------
 def push(records, file_id=None, sheet_id=None):
-    """
-    把记录全量写入腾讯文档在线表格（表头 + 数据，从首行覆盖写入）。
-    返回 (记录条数, 错误信息列表)。失败不影响主流程（仅记录）。
-    """
+    """把记录同步到腾讯文档。返回 (记录条数, 错误信息列表)。失败不影响主流程。"""
+    token = _token()
+    if not token:
+        return 0, ["未配置腾讯文档 Token：请在「配置我的凭证」填入 MCP Token（https://docs.qq.com/open/auth/mcp.html 获取）"]
     file_id = file_id or FILE_ID
-    sheet_id = sheet_id or SHEET_ID
-    if not CLIENT_ID:
-        return 0, ["未配置腾讯文档 Client ID：请在「配置我的凭证」中填写"]
-    if not file_id:
-        return 0, ["未指定腾讯文档 fileId（环境变量或请求参数）"]
-    if not sheet_id:
-        return 0, ["未指定 sheetId（表格 URL 中 ?tab= 后的字符串）"]
+    if not records:
+        return 0, []
 
-    tok = get_token()
-    if not tok:
-        return 0, ["未授权：请先访问 /tdocs/auth 完成腾讯文档授权"]
-
-    operations = _build_operations(records, sheet_id)
-    errs = []
     pushed = len(records)
-    # 每批最多 5 个操作
-    for i in range(0, len(operations), 5):
-        batch = operations[i:i + 5]
-        try:
-            resp = requests.post(
-                f"{API_BASE}/{file_id}/batchUpdate",
-                headers=_headers(tok),
-                json={"requests": batch},
-                timeout=20,
-            )
-            data = resp.json()
-            code = data.get("code")
-            if code is not None and code != 0:
-                errs.append(f"code={code} msg={data.get('message')}")
-        except Exception as e:
-            errs.append(str(e))
+    errs = []
+    try:
+        session = _initialize(token)
+        tools = list_tools(token, session)
+    except Exception as e:
+        return 0, [f"连接腾讯文档 MCP 失败：{e}"]
+
+    names = {t.get("name") for t in tools}
+
+    # 1) 已有目标表格 → 更新
+    if file_id and "batch_update_sheet_range" in names:
+        t = next(t for t in tools if t.get("name") == "batch_update_sheet_range")
+        props = (t.get("inputSchema") or {}).get("properties", {})
+        args = _map_range_args(props, file_id, sheet_id, records)
+        if args:
+            try:
+                res = call_tool(token, "batch_update_sheet_range", args, session)
+                if isinstance(res, dict) and res.get("isError"):
+                    errs.append("batch_update_sheet_range 报错：" + _text_of(res))
+                else:
+                    return pushed, errs
+            except Exception as e:
+                errs.append(f"batch_update_sheet_range 调用失败：{e}")
+        else:
+            errs.append("batch_update_sheet_range 参数无法映射，schema=" + json.dumps(props, ensure_ascii=False))
+
+    # 2) 兜底：新建 Excel 快照
+    if "create_excel_by_markdown" in names:
+        t = next(t for t in tools if t.get("name") == "create_excel_by_markdown")
+        props = (t.get("inputSchema") or {}).get("properties", {})
+        args = _map_create_args(props, records)
+        if args:
+            try:
+                res = call_tool(token, "create_excel_by_markdown", args, session)
+                if isinstance(res, dict) and res.get("isError"):
+                    errs.append("create_excel_by_markdown 报错：" + _text_of(res))
+                else:
+                    return pushed, errs
+            except Exception as e:
+                errs.append(f"create_excel_by_markdown 调用失败：{e}")
+        else:
+            errs.append("create_excel_by_markdown 参数无法映射，schema=" + json.dumps(props, ensure_ascii=False))
+    else:
+        errs.append("未找到可用写入工具；可用工具：" + ", ".join(sorted(names)))
+
     return pushed, errs
+
+
+def _text_of(result):
+    """从 MCP tools/call 的 result 里抽取文本，便于报错展示。"""
+    try:
+        parts = []
+        for item in (result.get("content") or []):
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+        return " ".join(parts) or json.dumps(result, ensure_ascii=False)
+    except Exception:
+        return str(result)

@@ -267,13 +267,9 @@
     <label>智能表字段映射（每行一个：列名=字段ID，留空则不同步）</label>
     <textarea id="cfg-fieldmap" style="height:150px;font-size:12px" placeholder="候选人=f04Gwj&#10;岗位=fIgwxB&#10;性别=&#10;年龄="></textarea>
 
-    <label>腾讯文档 - Client ID（应用ID）</label>
-    <input id="cfg-tdid" placeholder="docs.qq.com/open 应用 Client ID（必填）">
-    <label>腾讯文档 - Access Token（个人直连令牌，长期有效）</label>
-    <input id="cfg-tdtoken" placeholder="在文档列表页→更多操作→开放平台 获取的 Token">
-    <label>腾讯文档 - Open ID</label>
-    <input id="cfg-tdopen" placeholder="开放平台获取的 open_id">
-    <p style="font-size:12px;color:var(--muted);margin:2px 0 4px">个人开发者可直接用「Client ID + Access Token + Open ID」读写你的文档，<b>无需 OAuth 回调域名</b>；Client Secret 仅 OAuth 授权流程需要，可留空。</p>
+    <label>腾讯文档 - MCP Token（官方个人令牌，无需企业资质）</label>
+    <input id="cfg-tdtoken" placeholder="从 https://docs.qq.com/open/auth/mcp.html 获取的 Token">
+    <p style="font-size:12px;color:var(--muted);margin:2px 0 4px">接腾讯文档官方 MCP：填入单个「个人 Token」即可（Authorization 头鉴权）。<b>无需 Client ID / OAuth 回调</b>。注意：该 Token 等同账号可写权限，请勿外传。</p>
 
     <label>腾讯文档目标表格（粘贴完整链接，系统自动识别；录入后将写入此表）</label>
     <input id="cfg-tdlink" placeholder="https://docs.qq.com/sheet/xxxxxxxxxx?tab=yyyyyy">
@@ -469,13 +465,13 @@ async function refreshTdocsStatus(){
   try{
     const s=await (await fetch("/api/tdocs/status")).json();
     if(!s.configured){
-      el.textContent="腾讯文档：未配置（在「配置我的凭证」填 Client ID / Access Token / Open ID）";
+      el.textContent="腾讯文档：未配置（在「配置我的凭证」填 MCP Token）";
       el.style.color="";
     }else if(s.authorized){
-      el.textContent="腾讯文档：已连接 ✅（填了令牌，可直接写入）";
+      el.textContent="腾讯文档：已连接 ✅（已填 Token，可直接写入）";
       el.style.color="";
     }else{
-      el.textContent="腾讯文档：已填 Client ID 但缺 Access Token，请补全令牌";
+      el.textContent="腾讯文档：已填 Token 但鉴权未通过，请检查 Token 是否有效";
       el.style.color="#b45309";
     }
   }catch(e){ el.textContent="腾讯文档：状态获取失败"; el.style.color=""; }
@@ -497,9 +493,7 @@ async function loadConfig(){
     document.getElementById('cfg-vmodel').value=v.zhipu_vision_model||"";
     document.getElementById('cfg-imode').value=v.image_mode||"ocr_first";
     document.getElementById('cfg-webhooks').value=(v.smartsheet_webhooks||[]).join("\n");
-    document.getElementById('cfg-tdid').value=v.tdocs_client_id||"";          // 非敏感，回填原值
-    const tk=document.getElementById('cfg-tdtoken'); tk.value=""; tk.placeholder=_hint(v.tdocs_access_token)||"腾讯文档 Access Token";
-    document.getElementById('cfg-tdopen').value=v.tdocs_open_id||"";          // 非敏感，回填原值
+    const tk=document.getElementById('cfg-tdtoken'); tk.value=""; tk.placeholder=_hint(v.tdocs_mcp_token)||"腾讯文档 MCP Token";
     // 目标表格链接（由 file_id/sheet_id 还原，便于回显）
     const _fid=v.tdocs_file_id_raw||"", _sid=v.tdocs_sheet_id_raw||"";
     const _link=_fid?("https://docs.qq.com/sheet/"+_fid+(_sid?("?tab="+_sid):"")):"";
@@ -559,9 +553,7 @@ async function saveConfig(){
     smartsheet_webhooks: document.getElementById('cfg-webhooks').value.split("\n").map(s=>s.trim()).filter(Boolean),
     smartsheet_field_ids: fieldIds,
     tencent_docs:{
-      client_id: document.getElementById('cfg-tdid').value.trim(),
-      access_token: document.getElementById('cfg-tdtoken').value.trim(),
-      open_id: document.getElementById('cfg-tdopen').value.trim(),
+      mcp_token: document.getElementById('cfg-tdtoken').value.trim(),
       file_id: tdFile,
       sheet_id: tdSheet,
     },
@@ -592,7 +584,7 @@ async function connectTdocs(){
     if(s.authorized){
       setStatus("腾讯文档已连接 ✅（令牌有效，可直接写入）");
     }else{
-      setStatus("尚未配置有效令牌：请在「配置我的凭证」填入 Client ID + Access Token + Open ID 后保存", true);
+      setStatus("尚未配置有效令牌：请在「配置我的凭证」填入腾讯文档 MCP Token 后保存", true);
       openSettings();
     }
   }catch(e){ setStatus("检查失败："+e.message, true); }
@@ -613,7 +605,10 @@ async function syncTdocs(){
       if(tab) sheetId=tab;
     }catch(e){}
   }
-  if(!fileId||!sheetId){ setStatus("请先填写目标腾讯文档表格：在「配置我的凭证」粘贴表格链接，或在下方输入框填写", true); return; }
+  if(!fileId){
+    // 未指定目标表格：仍允许同步，后端会新建一个 Excel 快照；若想写入已有表格，先粘贴表格链接
+    setStatus("未指定目标表格，将新建 Excel 快照到你的腾讯文档（想写入已有表格请先粘贴表格链接）", true);
+  }
   setStatus("同步到腾讯文档中…");
   try{
     const r=await fetch("/api/tdocs/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fileId,sheetId})});
