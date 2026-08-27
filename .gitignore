@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+records.json
+.env
+*.env
+venv/
+.venv/
+.idea/
+.vscode/
+.DS_Store
+
+# 内部工作记忆，不纳入仓库
+.workbuddy/
+
+# 腾讯文档 OAuth 令牌（含用户授权信息，禁止入库）
+tdocs_token.json
+
+# 本地配置（含用户私钥/WEBOOK，禁止入库）
+config.json
+
+# 智能表轮询去重检查点（运行时生成）
+poll_checkpoint.json
+
+# API 成本用量日志（运行时生成，演示用）
+cost_log.json

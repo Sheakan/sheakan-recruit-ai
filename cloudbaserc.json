@@ -1,0 +1,57 @@
+{
+  "envId": "control103-d2g3l0bex94618506",
+  "framework": null,
+  "region": "ap-shanghai",
+  "functions": [
+    {
+      "name": "recruit-ai-func",
+      "runtime": "Python3.11",
+      "entry": "app",
+      "handler": "app.handler",
+      "memorySize": 256,
+      "timeout": 30,
+      "envVariables": {
+        "ZHIPU_API_KEY": "",
+        "SMARTSHEET_WEBHOOK": "",
+        "WECHAT_CORPID": "",
+        "WECHAT_CORPSECRET": "",
+        "WECHAT_TOKEN": "",
+        "WECHAT_AES_KEY": "",
+        "WECHAT_AGENTID": "",
+        "WECHAT_SMARTSHEET_DOCID": "",
+        "WECHAT_SMARTSHEET_SHEETID": "",
+        "TENCENT_DOCS_CLIENT_ID": "",
+        "TENCENT_DOCS_CLIENT_SECRET": "",
+        "TENCENT_DOCS_FILE_ID": "",
+        "TENCENT_DOCS_SHEET_ID": ""
+      },
+      "triggers": [
+        {
+          "name": "http",
+          "type": "apigw",
+          "config": {
+            "methods": ["GET", "POST"],
+            "authRequired": false
+          }
+        }
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "name": "recruit-ai-demo",
+      "port": 5000,
+      "build": {
+        "buildingBaseImage": "node:18",
+        "dockerfile": "Dockerfile"
+      },
+      "envVariables": {
+        "ZHIPU_API_KEY": "",
+        "SMARTSHEET_WEBHOOK": "",
+        "WECHAT_TOKEN": "",
+        "WECHAT_AES_KEY": "",
+        "WECHAT_CORPID": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+flask>=3.0
+requests>=2.31
+pycryptodome>=3.20
+pdfplumber>=0.11.0
+openpyxl>=3.1
+serverless-wsgi>=2.0
+# 图片 OCR 低成本优先（可选）：启用 OCR 还需系统安装 tesseract 二进制及中文包
+# apt-get install tesseract-ocr tesseract-ocr-chi-sim （或对应平台的 tesseract）
+Pillow>=10.0
+pytesseract>=0.3.10

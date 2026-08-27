@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>智聘 · 招聘数据智能中枢</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#fff; --line:#e6eaf2; --text:#1f2d3d;
+    --muted:#7a8aa0; --blue:#4285f4; --green:#2e9e5b; --purple:#8b5cf6;
+    --orange:#e8833a; --red:#e5484d; --teal:#0ea5a4;
+    --radius:14px; --radius-sm:10px;
+    --shadow-sm:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+    --shadow-md:0 6px 20px rgba(16,24,40,.08);
+    --shadow-lg:0 12px 40px rgba(0,0,0,.18);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+  header{padding:18px 24px;background:linear-gradient(90deg,#4285f4,#8b5cf6);color:#fff}
+  header h1{margin:0;font-size:20px}
+  header p{margin:4px 0 0;font-size:13px;opacity:.9}
+  .wrap{max-width:1240px;margin:20px auto;padding:0 16px;display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .bottom{max-width:1240px;margin:16px auto 40px;padding:0 16px}
+  .note{font-size:12.5px;color:var(--muted);line-height:1.75}
+  .note h3{margin:0 0 8px;font-size:14px;color:var(--text)}
+  .note p{margin:6px 0}
+  .note .lim{background:#fff7ed;border-left:3px solid var(--orange);padding:8px 10px;border-radius:6px;color:#9a3412;margin:8px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  textarea{width:100%;height:110px;resize:vertical;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit}
+  button{cursor:pointer;border:none;border-radius:8px;padding:9px 14px;font-size:14px;color:#fff;background:var(--blue);margin-top:10px}
+  button.ghost{background:#eef2fb;color:var(--blue)}
+  button.danger{background:#fdeaea;color:var(--red)}
+  button.tiny{padding:4px 8px;font-size:12px;margin:0 4px 0 0}
+  #status{font-size:13px;margin-top:10px;min-height:18px;white-space:pre-wrap;padding:8px 10px;border-radius:8px;display:none}
+  #status:not(:empty){display:block}
+  #status.err{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
+  #status.ok{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+  #status.info{background:#eef2fb;color:#1d4ed8;border:1px solid #dbeafe}
+  .result{display:none;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#f8fafc;overflow-x:auto;max-width:100%}
+  .result.show{display:block}
+  .result h4{margin:0 0 6px;font-size:13px;color:var(--green)}
+  .result table{font-size:12px;width:100%;min-width:520px}
+  .result td{padding:3px 6px;border-top:1px solid #eef2f7}
+  .result .k{color:var(--muted);white-space:nowrap}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .stat .n{font-size:24px;font-weight:700;color:var(--blue)}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:4px}
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .chart{width:100%;height:280px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  th{color:var(--muted);font-weight:600}
+  .tag{padding:2px 8px;border-radius:10px;font-size:12px}
+  .t-投递{background:#e8f0fe;color:#1a56db}.t-简历初筛{background:#e6f7ee;color:#1d7a43}
+  .t-笔试{background:#f0f9ff;color:#0369a1}.t-一面{background:#fff4e6;color:#c2671c}
+  .t-二面{background:#fff4e6;color:#b45309}.t-三面{background:#fef3c7;color:#92400e}
+  .t-offer{background:#f3eaff;color:#6d28d9}.t-入职{background:#d8f5e3;color:#157347}
+  .src{font-size:11px;color:var(--muted)}
+  h3{margin:0 0 8px;font-size:15px}
+  .scrollx{overflow:auto}
+  .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .btnrow button{margin-top:0}
+  .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:flex-start;justify-content:center;padding-top:60px;z-index:50}
+  .modal-box{background:#fff;border-radius:14px;padding:20px;width:440px;max-width:92vw;max-height:80vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.2)}
+  .modal-box label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  .modal-box input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  @media(max-width:900px){
+    .wrap{grid-template-columns:1fr;margin:14px auto}
+    .charts{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .btnrow button{flex:1 1 calc(50% - 8px)}
+    header{padding:14px 16px}
+    header h1{font-size:18px}
+  }
+  @media(max-width:480px){
+    .btnrow button{flex:1 1 100%}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .chart{height:240px}
+  }
+  /* ---------- 体验增强（统一阴影/圆角/微交互） ---------- */
+  button{transition:transform .08s ease, box-shadow .2s ease, background .2s ease}
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  .card{box-shadow:var(--shadow-sm);transition:box-shadow .2s ease}
+  .card:hover{box-shadow:var(--shadow-md)}
+  .stat{box-shadow:var(--shadow-sm);transition:transform .15s ease, box-shadow .2s ease;display:flex;align-items:center;gap:12px}
+  .stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+  .stat .ic{font-size:22px;width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#eef2fb}
+  .stat .n{font-size:22px;font-weight:700;color:var(--blue);line-height:1}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .fade-in{animation:fadeIn .35s ease both}
+  .result.show{animation:fadeIn .3s ease both}
+  .anom{margin-top:14px}
+  .anom-list{list-style:none;padding:0;margin:8px 0 0}
+  .anom-list li{background:#fff5f5;border-left:3px solid var(--red);padding:8px 10px;border-radius:8px;margin-bottom:6px;font-size:12.5px;color:#9f1239}
+  .anom-ok{background:#f0fdf4;border-left:3px solid var(--green);color:#15803d;padding:8px 10px;border-radius:8px;font-size:12.5px}
+  .conf-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;margin-left:6px}
+  .conf-low{background:#fff7ed;color:#c2410c}
+  .conf-mid{background:#fffbeb;color:#a16207}
+  .conf-high{background:#ecfdf5;color:#047857}
+  .assist-card input.q{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit}
+  .answer{margin-top:10px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;line-height:1.7;white-space:pre-wrap;display:none}
+  .answer.show{display:block;animation:fadeIn .3s ease both}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--blue)}
+  .empty{text-align:center;color:var(--muted);padding:42px 12px}
+  .empty .big{font-size:42px;margin-bottom:8px}
+  .grp-title{font-size:12px;color:var(--muted);margin:12px 0 4px;font-weight:600;letter-spacing:.3px}
+  /* 移动端：配置弹窗改为底部抽屉 */
+  @media(max-width:480px){
+    .modal-box{width:100%;max-width:100%;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));position:absolute;bottom:0;left:0;right:0;top:auto;max-height:88vh}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>智聘 · 招聘数据智能中枢</h1>
+  <p>RecruitMind · 招聘文本 / 简历 PDF / 招聘截图 → 智谱 GLM 结构化抽取 → 实时看板（替代手工录入，赋能招聘决策）</p>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="ghost" style="background:rgba(255,255,255,.18);color:#fff" onclick="openSettings()">配置我的凭证</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- 左列：录入 + 系统说明 -->
+  <div class="col">
+  <div class="card assist-card fade-in">
+    <h3>✨ AI 助手</h3>
+    <input class="q" id="askInput" placeholder="用中文问我，例如：二面有多少人？哪个渠道转化率最高？">
+    <div class="btnrow">
+      <button onclick="askAI()">问我招聘数据</button>
+      <button class="ghost" onclick="genInsight()">生成招聘周报</button>
+    </div>
+    <div class="answer" id="askAnswer"></div>
+  </div>
+
+  <div class="card">
+    <h3>① 录入</h3>
+    <div class="src" id="td-status">企业微信智能表格：检测中…</div>
+    <textarea id="input" placeholder="例：今天校招进展同步——李娜（女，24）产品经理一面过了，面试官赵磊，约周五二面；王强（男，29）算法岗笔试已发，猎头推的；张伟后端实习offer已发，25k。渠道分别是校招/猎头/内推。"></textarea>
+    <div class="grp-title">录入方式</div>
+    <div class="btnrow">
+      <button onclick="parseAndAdd()">手动解析录入</button>
+    </div>
+    <div class="grp-title">文件 / 同步 / 数据</div>
+    <div class="btnrow">
+      <button class="ghost" onclick="document.getElementById('pdf').click()">上传简历PDF</button>
+      <input id="pdf" type="file" accept=".pdf" style="display:none" onchange="parsePdf()">
+      <button class="ghost" onclick="document.getElementById('img').click()">上传图片</button>
+      <input id="img" type="file" accept="image/*" style="display:none" onchange="parseImage()">
+      <button class="ghost" onclick="syncDocs()">同步到企业微信智能表</button>
+      <button class="ghost" onclick="pollSmartsheet()">从企业微信智能表拉取</button>
+      <button class="ghost" onclick="loadDemo()">载入演示数据</button>
+      <button class="ghost" onclick="exportCSV()">导出CSV</button>
+      <button class="danger" onclick="clearAll()">清空</button>
+    </div>
+    <div id="status"></div>
+    <div id="result" class="result"></div>
+    <p style="font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6">
+      数据由服务端统一存储（演示用 records.json）。支持三种采集方式：① 粘贴招聘文本；② 上传<strong>简历 PDF</strong>；③ 上传<strong>招聘截图 / 简历照片</strong>（调用视觉模型识别图中文字再结构化）。抽取结果可一键<strong>同步到腾讯文档在线表格</strong>，实现 HR 原文档自动更新。
+    </p>
+
+    <!-- 腾讯文档同步 -->
+    <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
+      <div class="src" id="tdocs-status">腾讯文档：检测中…</div>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+        <button class="ghost" onclick="connectTdocs()">连接腾讯文档</button>
+        <button class="ghost" onclick="syncTdocs()">同步到腾讯文档</button>
+      </div>
+      <div style="margin-top:8px">
+        <input id="tdoc-file" placeholder="腾讯文档表格链接（直接粘贴完整链接即可自动识别）" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:6px">
+        <input id="tdoc-sheet" placeholder="工作表 ID（可选，留空由链接自动识别）" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px">
+      </div>
+    </div>
+  </div>
+
+  <!-- 左列第二个卡片：数据流向与限制摘要 -->
+  <div class="card note">
+    <h3>数据流向与限制</h3>
+    <p>输入（招聘文本 / 简历 PDF / 招聘截图）→ 智谱 GLM 结构化抽取 → 实时看板，并可一键同步到腾讯文档或企业微信智能表，替代 HR 手工录入。</p>
+    <div class="lim">⚠️ 企业微信「群消息实时接收」受域名 ICP 备案限制暂未启用（需备案域名回调）。当前保留两条企业微信通道接口：①「同步到企业微信智能表」把已抽取数据写入智能表；②「从企业微信智能表拉取」读取已在智能表中收集的数据（需先通过企微表单/人工在表里填入内容）再经 AI 抽取入库。</div>
+  </div>
+  </div><!-- /col 左 -->
+
+  <!-- 右列：看板 -->
+  <div class="col">
+    <div class="stats">
+      <div class="stat"><div class="ic">📋</div><div><div class="n" id="s-total">0</div><div class="l">总记录数</div></div></div>
+      <div class="stat"><div class="ic">🧑</div><div><div class="n" id="s-cand">0</div><div class="l">去重候选人</div></div></div>
+      <div class="stat"><div class="ic">✅</div><div><div class="n" id="s-hire">0</div><div class="l">已入职</div></div></div>
+      <div class="stat"><div class="ic">📈</div><div><div class="n" id="s-rate">0%</div><div class="l">投递→入职转化率（去重）</div></div></div>
+      <div class="stat"><div class="ic">💰</div><div><div class="n" id="s-cost">¥0</div><div class="l">API 成本</div></div></div>
+    </div>
+
+    <div class="charts">
+      <div class="card"><h3>招聘漏斗（各阶段人数）</h3><div id="funnel" class="chart"></div></div>
+      <div class="card"><h3>各岗位候选人分布</h3><div id="bar" class="chart"></div></div>
+      <div class="card"><h3>渠道分布</h3><div id="pieChannel" class="chart"></div></div>
+      <div class="card"><h3>状态分布</h3><div id="pieStatus" class="chart"></div></div>
+    </div>
+
+    <div class="card anom fade-in">
+      <h3>⚠️ 异常与待跟进（自动检测）</h3>
+      <div id="anomBox"><span class="src">检测中…</span></div>
+    </div>
+
+  </div><!-- /col 右 -->
+</div><!-- /wrap -->
+
+<div class="bottom">
+  <div class="card">
+    <h3>明细数据（点击「编辑」可修正 AI 抽取误差；移动端左右滑动查看全部字段）</h3>
+    <div class="scrollx">
+      <table id="tbl">
+        <thead>        <tr>
+          <th>候选人</th><th>性别</th><th>年龄</th><th>岗位</th><th>部门</th><th>阶段</th><th>状态</th>
+          <th>面试官</th><th>招聘负责人</th><th>渠道</th><th>手机号</th><th>邮箱</th><th>期望城市</th><th>时间</th><th>来源</th>
+          <th class="sortable" onclick="sortBy('confidence')">置信</th><th>校验</th><th>操作</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <h3>编辑记录</h3>
+    <div id="form"></div>
+    <div style="margin-top:14px">
+      <button onclick="saveEdit()">保存</button>
+      <button class="ghost" onclick="closeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 配置弹窗：使用者自行填写自己的凭证 -->
+<div class="modal" id="cfgModal">
+  <div class="modal-box">
+    <h3>配置我的凭证</h3>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 6px">所有凭证仅保存在服务端本地，不会进入代码仓库，也不回传明文到页面。</p>
+
+    <label>智谱 GLM API Key</label>
+    <input id="cfg-zhipu" placeholder="智谱 API Key（视觉模型用；已配置则留空不修改）">
+
+    <label>DeepSeek API Key（文本抽取默认通道，响应更快）</label>
+    <input id="cfg-dskey" placeholder="DeepSeek API Key（sk-...；已配置则留空不修改）">
+
+    <label>文本模型（默认 deepseek-chat；可填 glm-4-flash 切回智谱）</label>
+    <input id="cfg-model" placeholder="deepseek-chat">
+    <label>视觉模型（图片/截图识别，如 glm-4v-plus）</label>
+    <input id="cfg-vmodel" placeholder="glm-4v-plus">
+    <label>图片解析方式</label>
+    <select id="cfg-imode">
+      <option value="ocr_first">OCR 优先（本地识别文字 + 文本大模型，低成本·默认）</option>
+      <option value="ocr_only">仅 OCR（不调用视觉模型，OCR 不可用则报错）</option>
+      <option value="vision_only">仅视觉模型（直接传图给多模态模型，成本较高）</option>
+    </select>
+
+    <label>企业微信智能表 WEBHOOK（每行一个，可填多个表）</label>
+    <textarea id="cfg-webhooks" style="height:64px" placeholder="https://qyapi.weixin.qq.com/cgi-bin/wedoc/smartsheet/webhook?key=xxx"></textarea>
+
+    <label>智能表字段映射（每行一个：列名=字段ID，留空则不同步）</label>
+    <textarea id="cfg-fieldmap" style="height:150px;font-size:12px" placeholder="候选人=f04Gwj&#10;岗位=fIgwxB&#10;性别=&#10;年龄="></textarea>
+
+    <label>腾讯文档 - Client ID（应用ID）</label>
+    <input id="cfg-tdid" placeholder="docs.qq.com/open 应用 Client ID（必填）">
+    <label>腾讯文档 - Access Token（个人直连令牌，长期有效）</label>
+    <input id="cfg-tdtoken" placeholder="在文档列表页→更多操作→开放平台 获取的 Token">
+    <label>腾讯文档 - Open ID</label>
+    <input id="cfg-tdopen" placeholder="开放平台获取的 open_id">
+    <p style="font-size:12px;color:var(--muted);margin:2px 0 4px">个人开发者可直接用「Client ID + Access Token + Open ID」读写你的文档，<b>无需 OAuth 回调域名</b>；Client Secret 仅 OAuth 授权流程需要，可留空。</p>
+
+    <label>腾讯文档目标表格（粘贴完整链接，系统自动识别；录入后将写入此表）</label>
+    <input id="cfg-tdlink" placeholder="https://docs.qq.com/sheet/xxxxxxxxxx?tab=yyyyyy">
+    <label>工作表 ID（可选，留空由链接自动识别）</label>
+    <input id="cfg-tdsheet" placeholder="链接 ?tab= 之后的字符串">
+
+    <label>企业微信自建应用 - corpid</label>
+    <input id="cfg-corpid" placeholder="企业微信 corpid">
+    <label>企业微信自建应用 - corpsecret</label>
+    <input id="cfg-corpsecret" placeholder="企业微信 corpsecret">
+    <label>接收消息 Token</label>
+    <input id="cfg-token" placeholder="回调 Token">
+    <label>接收消息 EncodingAESKey</label>
+    <input id="cfg-aes" placeholder="回调 EncodingAESKey（43位）">
+    <label>AgentId（可选）</label>
+    <input id="cfg-agentid" placeholder="应用 AgentId">
+
+    <label>企业微信智能表（从智能表拉取·免域名回调） docid</label>
+    <input id="cfg-ssdoc" placeholder="智能表 docid（在表格链接 /sheet/ 之后的一段）">
+    <label>企业微信智能表 sheetid（可选，留空取默认子表）</label>
+    <input id="cfg-sssheet" placeholder="子表 sheetid">
+
+    <div style="margin-top:14px">
+      <button onclick="saveConfig()">保存配置</button>
+      <button class="ghost" onclick="closeSettings()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 系统说明 / 限制 / 展望 内容已移至「作业说明.md」，前端不再展示大段说明 -->
+
+<script>
+const STAGES = ["投递","简历初筛","笔试","一面","二面","三面","offer","入职"];
+const FIELDS = [
+  {k:"candidate",label:"候选人"},{k:"position",label:"岗位"},{k:"department",label:"部门"},
+  {k:"stage",label:"阶段"},{k:"status",label:"状态"},{k:"interviewer",label:"面试官"},
+  {k:"recruiter",label:"招聘负责人"},{k:"channel",label:"渠道"},{k:"education",label:"学历"},
+  {k:"experience",label:"工作年限"},{k:"currentCompany",label:"当前公司"},{k:"expectedSalary",label:"期望薪资"},
+  {k:"contact",label:"联系方式"},{k:"time",label:"时间"},{k:"remark",label:"备注"},
+  {k:"gender",label:"性别"},{k:"age",label:"年龄"},{k:"phone",label:"手机号"},{k:"email",label:"邮箱"},{k:"expectedCity",label:"期望城市"}
+];
+let records = [];
+let funnelChart, barChart, pieCh, pieSt;
+
+function setStatus(msg, type=''){ if(type===true) type='err'; const s=document.getElementById('status'); s.textContent=msg||''; s.className=type; }
+const SHOW_KEYS=[["candidate","候选人"],["gender","性别"],["age","年龄"],["position","岗位"],["department","部门"],["stage","阶段"],["status","状态"],["channel","渠道"],["phone","手机号"],["email","邮箱"],["expectedCity","期望城市"],["remark","备注"]];
+function confBadge(r, small){
+  const c=r&&r.confidence;
+  if(c===undefined||c===null||c==='') return '';
+  const v=Number(c);
+  const cls=v>=0.8?'conf-high':(v>=0.6?'conf-mid':'conf-low');
+  const txt=v>=0.8?'高':(v>=0.6?'中':(small?'低':'低·建议复核'));
+  return `<span class="conf-badge ${cls}">${txt}</span>`;
+}
+function issuesBadge(r){
+  const iss=(r&&r.issues)||[];
+  if(!iss.length) return '<span style="color:#94a3b8">—</span>';
+  const errs=iss.filter(i=>i.level==='error').length;
+  const tip=iss.map(i=>i.msg).join('；').replace(/"/g,'&quot;');
+  if(errs) return `<span style="color:#ef4444;cursor:help;font-weight:600" title="${tip}">⚠️ ${errs}</span>`;
+  return `<span style="color:#f59e0b;cursor:help" title="${tip}">ⓘ ${iss.length}</span>`;
+}
+function showResult(recs){
+  const box=document.getElementById('result');
+  if(!recs || !recs.length){ box.className='result'; box.innerHTML=''; return; }
+  let h='<h4>✅ 本次成功抽取 '+recs.length+' 条 '+confBadge(recs[0])+'</h4><table><tr>'+SHOW_KEYS.map(k=>'<td class="k">'+k[1]+'</td>').join('')+'</tr>';
+  for(const r of recs){ h+='<tr>'+SHOW_KEYS.map(k=>'<td>'+(r[k[0]]||'<span style="color:#cbd5e1">—</span>')+'</td>').join('')+'</tr>'; }
+  h+='</table>';
+  box.innerHTML=h; box.className='result show';
+}
+
+async function refresh(){ const r=await fetch("/api/records"); records=await r.json(); render(); await loadAnomalies(); await loadCost(); }
+
+// 所有录入入口共用的一条「结果文案」函数：added/merged/skipped 全部展示，
+// 避免出现「AI 说抽了 3 条，但看板只多了 1 条」的认知错位。
+function _statusMsg(base, d){
+  const add = Number(d.added)||0, mer = Number(d.merged)||0, skp = Number(d.skipped)||0;
+  const parts=[base];
+  if(add) parts.push(`新增录入 ${add} 条`);
+  if(mer) parts.push(`合并更新已有候选人 ${mer} 条（同一人的多次进展自动合成一条，不是丢数据）`);
+  if(skp) parts.push(`完全重复跳过 ${skp} 条`);
+  return parts.join(" · ");
+}
+
+async function parseAndAdd(){
+  const text=document.getElementById('input').value.trim();
+  if(!text){ setStatus("请输入招聘信息", "err"); return; }
+  setStatus("调用智谱 GLM 解析中…", "info");
+  try{
+    const r=await fetch("/api/parse",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
+    const d=await r.json();
+    if(d.error){ setStatus("错误："+d.error, "err"); showResult([]); return; }
+    setStatus(_statusMsg("解析成功", d), "ok");
+    showResult(d.records);
+    document.getElementById('input').value="";
+    await refresh();
+  }catch(e){ setStatus("请求失败："+e.message, "err"); }
+}
+
+async function parsePdf(){
+  const inp=document.getElementById('pdf');
+  if(!inp.files.length){ return; }
+  const fd=new FormData();
+  fd.append("file", inp.files[0]);
+  setStatus("解析简历 PDF → 智谱 GLM 抽取中…");
+  try{
+    const r=await fetch("/api/parse_pdf",{method:"POST",body:fd});
+    const d=await r.json();
+    if(d.error){ setStatus("错误："+d.error, "err"); showResult([]); return; }
+    setStatus(_statusMsg("PDF 解析完成（提取文本 "+d.extractedLen+" 字）", d), "ok");
+    showResult(d.records);
+    inp.value="";
+    await refresh();
+  }catch(e){ setStatus("请求失败："+e.message, true); }
+}
+
+async function parseImage(){
+  const inp=document.getElementById('img');
+  if(!inp.files.length){ return; }
+  const fd=new FormData();
+  fd.append("file", inp.files[0]);
+  setStatus("识别图片文字 → 智谱视觉模型 → 结构化抽取中…", "info");
+  try{
+    const r=await fetch("/api/parse_image",{method:"POST",body:fd});
+    const d=await r.json();
+    if(d.error){ setStatus("错误："+d.error, "err"); showResult([]); return; }
+    setStatus(_statusMsg("图片解析完成", d), "ok");
+    showResult(d.records);
+    inp.value="";
+    await refresh();
+  }catch(e){ setStatus("请求失败："+e.message, "err"); }
+}
+
+async function clearAll(){ if(confirm("确认清空所有数据？")){ await fetch("/api/clear",{method:"POST"}); records=[]; render(); setStatus("已清空"); } }
+
+async function syncDocs(){
+  try{
+    const r=await fetch("/api/sync",{method:"POST"}); const d=await r.json();
+    if(d.error){ setStatus("同步失败："+d.error, true); return; }
+    let msg="已同步 "+(d.pushed||0)+" 条到企业微信智能表";
+    if(d.errors&&d.errors.length) msg+="；注意："+d.errors.join("; ");
+    setStatus(msg);
+  }catch(e){ setStatus("同步失败："+e.message, true); }
+}
+
+async function pollSmartsheet(){
+  setStatus("从企业微信智能表拉取新增行 → AI 提取中…", "info");
+  try{
+    const r=await fetch("/api/poll_smartsheet",{method:"POST"});
+    const d=await r.json();
+    if(d.error){ setStatus("拉取失败："+d.error, "err"); showResult([]); return; }
+    setStatus(_statusMsg(`拉取完成：共拉 ${d.fetched||0} 条`, d), "ok");
+    await refresh();
+  }catch(e){ setStatus("拉取失败："+e.message, "err"); }
+}
+
+function exportCSV(){ window.location="/api/export"; }
+
+async function importCSV(){
+  const inp=document.getElementById('csv');
+  if(!inp.files.length) return;
+  const fd=new FormData();
+  fd.append("file", inp.files[0]);
+  setStatus("导入文件中…");
+  try{
+    const r=await fetch("/api/import_csv",{method:"POST",body:fd});
+    const d=await r.json();
+    if(d.error){ setStatus("错误："+d.error, true); return; }
+    const tag = d.mode==="template" ? "表头模式导入完成（无 AI，零配置可用）" : "AI 聊天记录导入完成";
+    let msg = _statusMsg(tag, d);
+    if(d.errors && d.errors.length) msg += "；部分行解析失败（详见控制台）";
+    setStatus(msg);
+    inp.value="";
+    await refresh();
+  }catch(e){ setStatus("请求失败："+e.message, true); }
+}
+
+function downloadTemplate(){ window.location="/api/template"; }
+
+async function loadDemo(){
+  if(records.length && !confirm("已存在数据，载入演示数据会在现有基础上追加。是否继续？")) return;
+  setStatus("载入演示数据中…");
+  try{
+    const r=await fetch("/api/demo",{method:"POST"}); const d=await r.json();
+    if(d.error){ setStatus("错误："+d.error, true); return; }
+    setStatus(_statusMsg("演示数据载入完成（来源标记为「示例数据」，可一键清空）", d));
+    await refresh();
+  }catch(e){ setStatus("请求失败："+e.message, true); }
+}
+
+async function refreshTdocsStatus(){
+  const el=document.getElementById('tdocs-status');
+  try{
+    const s=await (await fetch("/api/tdocs/status")).json();
+    if(!s.configured){
+      el.textContent="腾讯文档：未配置（在「配置我的凭证」填 Client ID / Access Token / Open ID）";
+      el.style.color="";
+    }else if(s.authorized){
+      el.textContent="腾讯文档：已连接 ✅（填了令牌，可直接写入）";
+      el.style.color="";
+    }else{
+      el.textContent="腾讯文档：已填 Client ID 但缺 Access Token，请补全令牌";
+      el.style.color="#b45309";
+    }
+  }catch(e){ el.textContent="腾讯文档：状态获取失败"; el.style.color=""; }
+}
+
+async function loadConfig(){
+  try{
+    const c=await (await fetch("/api/config")).json();
+    document.getElementById('td-status').textContent="企业微信智能表："+(c.smartsheet?`已接入 ✅（${c.smartsheet_count} 个表，自动写入）`:"未接入（在「配置我的凭证」中填写 WEBHOOK）");
+    await refreshTdocsStatus();
+    // 回填配置弹窗。
+    // 安全约定：敏感密钥只回传了脱敏串，绝不能回填进可编辑框（否则保存时会把脱敏串当真值覆盖）。
+    // 故对密钥类字段留空，并用 placeholder 提示「已配置」；非敏感标识（client_id/open_id/file_id 等）回填原值。
+    const v=c.values||{};
+    const _hint=(masked)=> masked ? ("已配置："+masked+"，留空则不修改") : "";
+    const zk=document.getElementById('cfg-zhipu'); zk.value=""; zk.placeholder=_hint(v.zhipu_api_key)||"智谱 API Key（视觉模型用）";
+    const dk=document.getElementById('cfg-dskey'); if(dk){ dk.value=""; dk.placeholder=_hint(v.deepseek_api_key)||"DeepSeek API Key（文本抽取默认）"; }
+    document.getElementById('cfg-model').value=v.zhipu_model||"deepseek-chat";
+    document.getElementById('cfg-vmodel').value=v.zhipu_vision_model||"";
+    document.getElementById('cfg-imode').value=v.image_mode||"ocr_first";
+    document.getElementById('cfg-webhooks').value=(v.smartsheet_webhooks||[]).join("\n");
+    document.getElementById('cfg-tdid').value=v.tdocs_client_id||"";          // 非敏感，回填原值
+    const tk=document.getElementById('cfg-tdtoken'); tk.value=""; tk.placeholder=_hint(v.tdocs_access_token)||"腾讯文档 Access Token";
+    document.getElementById('cfg-tdopen').value=v.tdocs_open_id||"";          // 非敏感，回填原值
+    // 目标表格链接（由 file_id/sheet_id 还原，便于回显）
+    const _fid=v.tdocs_file_id_raw||"", _sid=v.tdocs_sheet_id_raw||"";
+    const _link=_fid?("https://docs.qq.com/sheet/"+_fid+(_sid?("?tab="+_sid):"")):"";
+    document.getElementById('cfg-tdlink').value=_link;
+    document.getElementById('cfg-tdsheet').value=_sid;
+    document.getElementById('tdoc-file').value=_link;   // 同步到主页面输入框
+    document.getElementById('tdoc-sheet').value=_sid;
+    window.CFG_TDOC={file_id:_fid, sheet_id:_sid};   // 供手动同步回退使用
+    const ck=document.getElementById('cfg-corpid'); ck.value=""; ck.placeholder=_hint(v.wecom_corpid)||"企业 CorpID";
+    const cs=document.getElementById('cfg-corpsecret'); cs.value=""; cs.placeholder=_hint(v.wecom_corpsecret)||"企业 CorpSecret";
+    const ct=document.getElementById('cfg-token'); ct.value=""; ct.placeholder=_hint(v.wecom_token)||"接收消息 Token";
+    const ca=document.getElementById('cfg-aes'); ca.value=""; ca.placeholder=_hint(v.wecom_aes_key)||"EncodingAESKey";
+    document.getElementById('cfg-agentid').value=v.wecom_agentid||"";
+    document.getElementById('cfg-ssdoc').value=v.wecom_smartsheet_docid||"";
+    document.getElementById('cfg-sssheet').value=v.wecom_smartsheet_sheetid||"";
+    // 字段映射：由 effective_field_map（key->id）拼成「列名=ID」
+    const efm=v.effective_field_map||{};
+    const labelOf={}; FIELDS.forEach(f=>labelOf[f.k]=f.label);
+    document.getElementById('cfg-fieldmap').value=Object.keys(efm).map(k=>`${labelOf[k]||k}=${efm[k]||""}`).join("\n");
+  }catch(e){}
+}
+
+function openSettings(){ document.getElementById('cfgModal').style.display='block'; }
+function closeSettings(){ document.getElementById('cfgModal').style.display='none'; }
+
+async function saveConfig(){
+  // 解析字段映射「列名=ID」或「key=ID」→ {key: id}
+  const labelToKey={}; FIELDS.forEach(f=>{labelToKey[f.label]=f.k; labelToKey[f.k]=f.k;});
+  const fieldIds={};
+  document.getElementById('cfg-fieldmap').value.split("\n").forEach(line=>{
+    const m=line.trim().match(/^(.+?)\s*[=:]\s*(.+)$/);
+    if(!m) return;
+    const key=(labelToKey[m[1].trim()]||"").trim();
+    const id=m[2].trim();
+    if(key && id) fieldIds[key]=id;
+  });
+  // 解析腾讯文档目标表格链接 → file_id / sheet_id
+  let tdLink=document.getElementById('cfg-tdlink').value.trim();
+  let tdSheet=document.getElementById('cfg-tdsheet').value.trim();
+  let tdFile="";
+  if(tdLink){
+    try{
+      if(tdLink.includes('docs.qq.com')){
+        const u=new URL(tdLink);
+        const m=u.pathname.match(/\/(sheet|doc|form|slides)\/([A-Za-z0-9]+)/);
+        if(m) tdFile=m[2];
+        if(!tdSheet){ const tab=u.searchParams.get('tab'); if(tab) tdSheet=tab; }
+      } else { tdFile=tdLink; }
+    }catch(e){ tdFile=tdLink; }
+  }
+  const payload={
+    zhipu_api_key: document.getElementById('cfg-zhipu').value.trim(),
+    deepseek_api_key: (document.getElementById('cfg-dskey')||{value:""}).value.trim(),
+    zhipu_model: document.getElementById('cfg-model').value.trim(),
+    zhipu_vision_model: document.getElementById('cfg-vmodel').value.trim(),
+    image_mode: document.getElementById('cfg-imode').value,
+    smartsheet_webhooks: document.getElementById('cfg-webhooks').value.split("\n").map(s=>s.trim()).filter(Boolean),
+    smartsheet_field_ids: fieldIds,
+    tencent_docs:{
+      client_id: document.getElementById('cfg-tdid').value.trim(),
+      access_token: document.getElementById('cfg-tdtoken').value.trim(),
+      open_id: document.getElementById('cfg-tdopen').value.trim(),
+      file_id: tdFile,
+      sheet_id: tdSheet,
+    },
+    wecom:{
+      corpid: document.getElementById('cfg-corpid').value.trim(),
+      corpsecret: document.getElementById('cfg-corpsecret').value.trim(),
+      token: document.getElementById('cfg-token').value.trim(),
+      aes_key: document.getElementById('cfg-aes').value.trim(),
+      agentid: document.getElementById('cfg-agentid').value.trim(),
+      smartsheet_docid: document.getElementById('cfg-ssdoc').value.trim(),
+      smartsheet_sheetid: document.getElementById('cfg-sssheet').value.trim(),
+    }
+  };
+  try{
+    const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(d.zhipu && (d.wecom || d.smartsheet)){ setStatus("配置已保存 ✅"); }
+    else { setStatus("配置已保存（部分未填：智谱Key"+(d.zhipu?"✅":"❌")+" / 智能表"+(d.smartsheet?"✅":"❌")+" / 企业微信"+(d.wecom?"✅":"❌")+"）"); }
+    closeSettings();
+    await loadConfig();
+  }catch(e){ setStatus("保存失败："+e.message, true); }
+}
+
+async function connectTdocs(){
+  // 个人令牌模式：无需 OAuth 跳转，直接校验已填的 Access Token 是否有效
+  try{
+    const s=await (await fetch("/api/tdocs/status")).json();
+    if(s.authorized){
+      setStatus("腾讯文档已连接 ✅（令牌有效，可直接写入）");
+    }else{
+      setStatus("尚未配置有效令牌：请在「配置我的凭证」填入 Client ID + Access Token + Open ID 后保存", true);
+      openSettings();
+    }
+  }catch(e){ setStatus("检查失败："+e.message, true); }
+}
+
+async function syncTdocs(){
+  let fileId=document.getElementById('tdoc-file').value.trim();
+  let sheetId=document.getElementById('tdoc-sheet').value.trim();
+  // 主页面未填时，回退到「配置我的凭证」中已保存的目标表格
+  if(!fileId && CFG_TDOC && CFG_TDOC.file_id){ fileId=CFG_TDOC.file_id; sheetId=CFG_TDOC.sheet_id||sheetId; }
+  // 支持直接粘贴完整链接，自动解析 fileId / sheetId
+  if(fileId.includes('docs.qq.com')){
+    try{
+      const u=new URL(fileId);
+      const m=u.pathname.match(/\/(sheet|doc|slide)\/([A-Za-z0-9_-]+)/);
+      if(m) fileId=m[2];
+      const tab=u.searchParams.get('tab');
+      if(tab) sheetId=tab;
+    }catch(e){}
+  }
+  if(!fileId||!sheetId){ setStatus("请先填写目标腾讯文档表格：在「配置我的凭证」粘贴表格链接，或在下方输入框填写", true); return; }
+  setStatus("同步到腾讯文档中…");
+  try{
+    const r=await fetch("/api/tdocs/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fileId,sheetId})});
+    const d=await r.json();
+    if(d.error){ setStatus("同步失败："+d.error, true); return; }
+    let msg="已同步 "+(d.pushed||0)+" 条到腾讯文档在线表格";
+    if(d.errors&&d.errors.length) msg+="；注意："+d.errors.join("; ");
+    setStatus(msg);
+  }catch(e){ setStatus("同步失败："+e.message, true); }
+}
+
+// ---- 编辑 / 删除 ----
+let editId=null;
+function editRecord(id){
+  const r=records.find(x=>x.id===id); if(!r) return;
+  editId=id;
+  document.getElementById('form').innerHTML = FIELDS.map(f=>
+    `<label>${f.label}</label><input id="f-${f.k}" value="${(r[f.k]||'').replace(/"/g,'&quot;')}">`).join('');
+  document.getElementById('modal').style.display='block';
+}
+function closeModal(){ document.getElementById('modal').style.display='none'; }
+async function saveEdit(){
+  const body={};
+  FIELDS.forEach(f=>{ body[f.k]=document.getElementById('f-'+f.k).value.trim(); });
+  const r=await fetch('/api/record/'+editId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(d.error){ alert(d.error); return; }
+  closeModal(); await refresh(); setStatus('已更新记录');
+}
+async function delRecord(id){
+  if(!confirm("确认删除该记录？")) return;
+  await fetch('/api/record/'+id,{method:'DELETE'});
+  await refresh(); setStatus('已删除');
+}
+
+// ---- AI 助手：问答 / 周报 / 异常 ----
+async function askAI(){
+  const q=document.getElementById('askInput').value.trim();
+  if(!q){ setStatus("请输入要问的问题", "err"); return; }
+  const box=document.getElementById('askAnswer');
+  box.className='answer'; box.textContent='AI 分析中…';
+  const btn=event&&event.target; if(btn){btn.disabled=true;}
+  try{
+    const r=await fetch("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q})});
+    const d=await r.json();
+    if(d.error){ box.textContent="错误："+d.error; }
+    else { box.textContent=d.answer; }
+    box.className='answer show';
+  }catch(e){ box.textContent="请求失败："+e.message; box.className='answer show'; }
+  if(btn){btn.disabled=false;}
+}
+async function genInsight(){
+  const box=document.getElementById('askAnswer');
+  box.className='answer'; box.textContent='正在生成招聘周报…';
+  try{
+    const r=await fetch("/api/insight",{method:"POST"});
+    const d=await r.json();
+    if(d.error){ box.textContent="错误："+d.error; }
+    else { box.textContent=d.insight; }
+    box.className='answer show';
+  }catch(e){ box.textContent="请求失败："+e.message; box.className='answer show'; }
+}
+async function loadAnomalies(){
+  try{
+    const d=await (await fetch("/api/anomalies")).json();
+    const box=document.getElementById('anomBox');
+    const list=d.anomalies||[];
+    if(!list.length){ box.innerHTML='<div class="anom-ok">✅ 未检测到异常，数据状态良好</div>'; return; }
+    box.innerHTML='<ul class="anom-list">'+list.map(a=>`<li>· ${a.msg}</li>`).join('')+'</ul>';
+  }catch(e){ document.getElementById('anomBox').innerHTML='<span class="src">检测暂不可用</span>'; }
+}
+
+async function loadCost(){
+  try{
+    const c=await (await fetch("/api/cost")).json();
+    document.getElementById('s-cost').textContent="¥"+(c.cost||0).toFixed(2);
+  }catch(e){}
+}
+
+// ---- 渲染 ----
+let sortKey=null, sortDir=1;
+function sortBy(k){ if(sortKey===k){sortDir*=-1;} else {sortKey=k;sortDir=1;} render(); }
+function render(){
+  const total=records.length;
+  // 生成去重候选人标识：优先 phone / email，否则 candidate+position（防止同名）
+  const keyOf=r=> (r.phone?('p:'+r.phone):(r.email?('e:'+r.email):('n:'+(r.candidate||'')+'|'+(r.position||''))));
+  // 去重后的人集合（全量）
+  const candSet=new Set();
+  records.forEach(r=>{ const k=keyOf(r); if((r.candidate||r.phone||r.email)) candSet.add(k); });
+  const cand=candSet.size;
+
+  // 每个阶段的「去重候选人数」（同一候选人跨多条记录时，每个去过的阶段都记一次，用于漏斗计数）
+  // 注意：这是"曾经到过某个阶段的人数"，符合传统招聘漏斗含义
+  const stageCandMap={}; // stage -> Set(key)
+  STAGES.forEach(s=>stageCandMap[s]=new Set());
+  records.forEach(r=>{
+    const s=r.stage;
+    if(!s || !stageCandMap[s]) return;
+    const k=keyOf(r);
+    if(k && (r.candidate||r.phone||r.email)) stageCandMap[s].add(k);
+  });
+  const stageCount=STAGES.map(s=>stageCandMap[s].size);
+
+  const hire=stageCount[STAGES.indexOf("入职")];
+  // 投递过的去重人数（所有阶段 >= 投递，即只要出现过阶段记录过的人都算"经过投递入口"）
+  // 更严格：只算 stage==="投递" 的去重人数；如果这个集合太小（演示数据经常没写投递阶段），
+  // 则回退为「所有候选人」作为分母，并在文案上提示
+  let deliveredStrict=stageCount[STAGES.indexOf("投递")];
+  const delivered=deliveredStrict>0? deliveredStrict : cand;
+  document.getElementById('s-total').textContent=total;
+  document.getElementById('s-cand').textContent=cand;
+  document.getElementById('s-hire').textContent=hire;
+  const rate=delivered?Math.round(hire/delivered*100):0;
+  const rateLabel=deliveredStrict>0? (rate+"%") : (rate+"%");
+  document.getElementById('s-rate').textContent=rateLabel;
+  // 提示：当演示数据缺少"投递"阶段记录时，把分母回退为去重候选人数，并在 hover 时展示
+  document.getElementById('s-rate').title=deliveredStrict>0
+    ? `口径：入职去重人数 / 投递阶段去重人数 = ${hire} / ${deliveredStrict}`
+    : `口径提示：演示数据未含「投递」阶段记录，暂以「入职 / 全体去重候选人」展示 = ${hire} / ${cand}；正式使用建议在每条流程起点写入「投递」阶段。`;
+
+  // 排序（点击表头）
+  let view=records.slice();
+  if(sortKey){
+    view.sort((a,b)=>{
+      let x=a[sortKey]||"", y=b[sortKey]||"";
+      if(sortKey==="confidence"){ x=Number(x)||0; y=Number(y)||0; }
+      if(x<y) return -1*sortDir; if(x>y) return 1*sortDir; return 0;
+    });
+  } else { view=view.reverse(); }
+
+  // stageCount 已在前面按「去重候选人」计算，漏斗图直接复用
+  funnelChart.setOption({tooltip:{trigger:"item"},series:[{type:"funnel",top:10,bottom:10,left:"5%",width:"90%",label:{formatter:"{b}: {c}"},data:STAGES.map((s,i)=>({name:s,value:stageCount[i]}))}]});
+
+  // 岗位分布图：同一候选人报同一岗位只算 1 次（去重）
+  const posMap={};
+  const seenPos=new Set();
+  records.forEach(r=>{
+    const p=r.position||"未填";
+    const k=keyOf(r)+'|'+p;
+    if(seenPos.has(k)) return;
+    seenPos.add(k);
+    posMap[p]=(posMap[p]||0)+1;
+  });
+  const posNames=Object.keys(posMap);
+  barChart.setOption({tooltip:{trigger:"axis"},xAxis:{type:"category",data:posNames,axisLabel:{interval:0,rotate:30}},yAxis:{type:"value",minInterval:1},series:[{type:"bar",data:posNames.map(p=>posMap[p]),itemStyle:{color:"#4285f4"}}]});
+
+  // 渠道分布：去重（同一候选人来自同一渠道只计 1 次）
+  const chMap={};
+  const seenCh=new Set();
+  records.forEach(r=>{
+    const c=r.channel||"未填";
+    const k=keyOf(r)+'|'+c;
+    if(seenCh.has(k)) return;
+    seenCh.add(k);
+    chMap[c]=(chMap[c]||0)+1;
+  });
+  pieCh.setOption({tooltip:{trigger:"item"},series:[{type:"pie",radius:"55%",data:Object.keys(chMap).map(c=>({name:c,value:chMap[c]})),label:{formatter:"{b}: {c}"}}]});
+
+  // 状态分布：按「每个候选人的最晚阶段状态」去重计数，避免同一人不同阶段多条状态叠加失真
+  const stMap={};
+  const stageOrder={}; STAGES.forEach((s,i)=>stageOrder[s]=i);
+  const latest={}; // key -> {stageOrder, status}
+  records.forEach(r=>{
+    const s=r.status||"未填";
+    const so=stageOrder[r.stage];
+    if(so===undefined) return; // 未识别阶段，不计入状态分布
+    const k=keyOf(r);
+    if(!latest[k] || so>=latest[k].stageOrder) latest[k]={stageOrder:so,status:s};
+  });
+  Object.values(latest).forEach(v=>{ const s=v.status; stMap[s]=(stMap[s]||0)+1; });
+  pieSt.setOption({tooltip:{trigger:"item"},series:[{type:"pie",radius:"55%",data:Object.keys(stMap).map(s=>({name:s,value:stMap[s]})),label:{formatter:"{b}: {c}"}}]});
+
+  const tb=document.querySelector("#tbl tbody");
+  if(!view.length){
+    tb.innerHTML='<tr><td colspan="17"><div class="empty"><div class="big">📭</div>暂无数据，点「载入演示数据」或粘贴招聘信息开始体验</div></td></tr>';
+    return;
+  }
+  tb.innerHTML=view.map(r=>{
+    const st=r.stage||""; const cls="t-"+(st==="offer"?"offer":st);
+    return `<tr>
+      <td>${r.candidate||"-"}</td>
+      <td>${r.gender||"-"}</td><td>${r.age||"-"}</td>
+      <td>${r.position||"-"}</td><td>${r.department||"-"}</td>
+      <td><span class="tag ${cls}">${st||"-"}</span></td><td>${r.status||"-"}</td>
+      <td>${r.interviewer||"-"}</td><td>${r.recruiter||"-"}</td><td>${r.channel||"-"}</td>
+      <td>${r.phone||"-"}</td><td>${r.email||"-"}</td><td>${r.expectedCity||"-"}</td>
+      <td>${r.time||"-"}</td><td class="src">${r.source||"-"}</td>
+      <td>${confBadge(r,true)}</td>
+      <td>${issuesBadge(r)}</td>
+      <td><button class="tiny" onclick="editRecord('${r.id}')">编辑</button><button class="tiny danger" onclick="delRecord('${r.id}')">删</button></td>
+    </tr>`;
+  }).join("");
+}
+
+window.onload=async()=>{
+  funnelChart=echarts.init(document.getElementById('funnel'));
+  barChart=echarts.init(document.getElementById('bar'));
+  pieCh=echarts.init(document.getElementById('pieChannel'));
+  pieSt=echarts.init(document.getElementById('pieStatus'));
+  await loadConfig();
+  await refresh();
+  await loadAnomalies();
+  window.addEventListener('resize',()=>{funnelChart.resize();barChart.resize();pieCh.resize();pieSt.resize();});
+};
+</script>
+</body>
+</html>
