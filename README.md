@@ -5,7 +5,8 @@
 把 HR 的招聘文本、简历、截图与企业微信数据，用**智谱 GLM** 自动转成结构化招聘数据并实时可视化，替代手工录入。
 
 - 代码仓库：https://github.com/Sheakan/sheakan-recruit-ai
-- 在线预览：https://recruit-ai-303150-11-1343245134.sh.run.tcloudbase.com（腾讯云 CloudBase 云托管部署）
+- 在线预览：https://recruit-ai-303150-11-1343245134.sh.run.tcloudbase.com
+- （腾讯云 CloudBase 云托管部署）
 
 ## 架构
 
