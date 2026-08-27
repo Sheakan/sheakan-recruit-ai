@@ -15,7 +15,7 @@ DEFAULT = {
     "zhipu_vision_model": "glm-4v-plus",
     "deepseek_api_key": "",
     "deepseek_model": "deepseek-chat",
-    "image_mode": "ocr_first",       # 图片解析方式：ocr_first(本地OCR+文本模型,低成本) / ocr_only(仅OCR,无OCR则报错) / vision_only(仅视觉模型)
+    "image_mode": "vision",          # 图片解析方式：vision(云端视觉模型读图,免本地安装,需智谱Key) / ocr_local(仅本地tesseract OCR,需安装)
     "smartsheet_webhooks": [],            # 多个智能表 WEBHOOK，录入后全部同步
     "smartsheet_field_ids": {},           # 字段 key -> 智能表字段ID（界面可配，覆盖内置映射）
     "wecom": {

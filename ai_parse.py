@@ -284,32 +284,40 @@ def _ocr_text(image_bytes):
 
 def parse_image(image_bytes: bytes, filename: str = "image.png", api_key=None, model=None, mode=None):
     """
-    图片解析，支持三种模式（前端可配）：
-      - ocr_first（默认）：本地 OCR 识别文字 → 文本大模型抽取字段（低成本）；OCR 不足时回退视觉模型
-      - ocr_only：仅本地 OCR + 文本大模型；无 OCR 或识别不足则明确报错，绝不调用视觉模型
-      - vision_only：跳过 OCR，直接调用视觉模型（成本较高、易触发 429 限流）
-    无论哪条路径，OCR 得到的文字最终都用便宜的文本模型（默认 glm-4-flash）结构化抽取。
+    图片解析，支持两种模式（前端可配）：
+      - vision（默认）：云端视觉模型直接读图取原文 → 文本大模型结构化抽取。
+                       免本地安装（不再依赖 tesseract），复用已有智谱 Key；
+                       成本高于纯文本，视觉模型有频率限制（429）。
+      - ocr_local：仅本地 tesseract OCR 识别文字 → 文本大模型抽取；
+                   需部署机安装 tesseract-ocr 及中文包 chi_sim，未安装则明确报错。
+    主路径改为云端视觉，解决「本地 tesseract 在多数云端环境缺失导致 OCR 静默失效」的问题。
     返回 records 列表。
     """
     if not (_text_api_key() or DEEPSEEK_API_KEY or config_store.load().get("deepseek_api_key")):
         raise RuntimeError("未配置 模型 API Key（请在界面「配置」中填写）")
-    mode = mode or config_store.load().get("image_mode", "ocr_first")
+    mode = mode or config_store.load().get("image_mode", "vision")
 
-    # 仅视觉模型：直接走视觉路径
-    if mode == "vision_only":
+    # 云端视觉读图（默认）：不依赖任何本地二进制
+    if mode in ("vision", "vision_only"):
+        if not _text_api_key():
+            raise RuntimeError(
+                "云端视觉读图需要「智谱 Key」（视觉模型 glm-4v-plus）。"
+                "请在「配置我的凭证」中填写智谱 Key；或改用「仅本地 OCR」模式并在部署机安装 tesseract。"
+            )
         return _parse_image_vision(image_bytes, filename)
 
-    # OCR 优先 / 仅 OCR：先本地 OCR
-    ocr = _ocr_text(image_bytes)
-    if ocr and len(ocr.strip()) >= 8:
-        return parse_text(ocr)
-    if mode == "ocr_only":
+    # 仅本地 OCR：需安装 tesseract + 中文包
+    if mode in ("ocr_local", "ocr_only"):
+        ocr = _ocr_text(image_bytes)
+        if ocr and len(ocr.strip()) >= 8:
+            return parse_text(ocr)
         raise RuntimeError(
-            "本地 OCR 未识别出足够文字（需系统安装 tesseract 及中文包 chi_sim），"
-            "且当前为「仅 OCR」模式已停止；可改为「OCR 优先」或「仅视觉模型」。"
+            "本地 OCR 未识别出足够文字。原因：当前环境未安装 tesseract 或中文包 chi_sim；"
+            "请在部署机执行 `apt-get install tesseract-ocr tesseract-ocr-chi-sim`（或对应平台命令），"
+            "或改用「云端视觉读图」模式。"
         )
 
-    # ocr_first 且 OCR 不足 → 回退视觉模型
+    # 未知模式兜底：走云端视觉
     return _parse_image_vision(image_bytes, filename)
 
 

@@ -289,9 +289,8 @@
     <input id="cfg-vmodel" placeholder="glm-4v-plus">
     <label>图片解析方式</label>
     <select id="cfg-imode">
-      <option value="ocr_first">OCR 优先（本地识别文字 + 文本大模型，低成本·默认）</option>
-      <option value="ocr_only">仅 OCR（不调用视觉模型，OCR 不可用则报错）</option>
-      <option value="vision_only">仅视觉模型（直接传图给多模态模型，成本较高）</option>
+      <option value="vision">云端视觉读图（默认·免本地安装，需智谱 Key）</option>
+      <option value="ocr_local">仅本地 OCR（需安装 tesseract + 中文包）</option>
     </select>
 
     <label>企业微信智能表 WEBHOOK（每行一个，可填多个表）</label>
@@ -586,7 +585,7 @@ async function loadConfig(){
     const dk=document.getElementById('cfg-dskey'); if(dk){ dk.value=""; dk.placeholder=_hint(v.deepseek_api_key)||"DeepSeek API Key（文本抽取默认）"; }
     document.getElementById('cfg-model').value=v.zhipu_model||"glm-4-flash";
     document.getElementById('cfg-vmodel').value=v.zhipu_vision_model||"";
-    document.getElementById('cfg-imode').value=v.image_mode||"ocr_first";
+    document.getElementById('cfg-imode').value=v.image_mode||"vision";
     document.getElementById('cfg-webhooks').value=(v.smartsheet_webhooks||[]).join("\n");
     const tk=document.getElementById('cfg-tdtoken'); tk.value=""; tk.placeholder=_hint(v.tdocs_mcp_token)||"腾讯文档 MCP Token";
     // 目标表格链接（由 file_id/sheet_id 还原，便于回显）

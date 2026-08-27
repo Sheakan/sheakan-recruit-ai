@@ -222,7 +222,7 @@ def api_config_save():
         _set("deepseek_api_key", data["deepseek_api_key"])
     if "deepseek_model" in data:
         _set("deepseek_model", data["deepseek_model"] or "deepseek-chat")
-    if "image_mode" in data and data["image_mode"] in ("ocr_first", "ocr_only", "vision_only"):
+    if "image_mode" in data and data["image_mode"] in ("vision", "ocr_local"):
         cfg["image_mode"] = data["image_mode"]
     if "smartsheet_field_ids" in data and isinstance(data["smartsheet_field_ids"], dict):
         cfg["smartsheet_field_ids"] = {k: (v or "").strip() for k, v in data["smartsheet_field_ids"].items() if (v or "").strip()}
@@ -489,7 +489,7 @@ def api_parse_image():
         return jsonify({"error": "仅支持图片文件（png/jpg/jpeg/gif/bmp/webp）"}), 400
     try:
         raw = f.read()
-        recs = ai_parse.parse_image(raw, f.filename, mode=CFG.get("image_mode", "ocr_first"))
+        recs = ai_parse.parse_image(raw, f.filename, mode=CFG.get("image_mode", "vision"))
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
