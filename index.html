@@ -247,11 +247,11 @@
     <label>智谱 GLM API Key</label>
     <input id="cfg-zhipu" placeholder="智谱 API Key（视觉模型用；已配置则留空不修改）">
 
-    <label>DeepSeek API Key（文本抽取默认通道，响应更快）</label>
+    <label>DeepSeek API Key（备选文本通道，填 deepseek-chat 可切换）</label>
     <input id="cfg-dskey" placeholder="DeepSeek API Key（sk-...；已配置则留空不修改）">
 
-    <label>文本模型（默认 deepseek-chat；可填 glm-4-flash 切回智谱）</label>
-    <input id="cfg-model" placeholder="deepseek-chat">
+    <label>文本模型（默认 glm-4-flash；也可填 deepseek-chat 用 DeepSeek）</label>
+    <input id="cfg-model" placeholder="glm-4-flash">
     <label>视觉模型（图片/截图识别，如 glm-4v-plus）</label>
     <input id="cfg-vmodel" placeholder="glm-4v-plus">
     <label>图片解析方式</label>
@@ -493,7 +493,7 @@ async function loadConfig(){
     const _hint=(masked)=> masked ? ("已配置："+masked+"，留空则不修改") : "";
     const zk=document.getElementById('cfg-zhipu'); zk.value=""; zk.placeholder=_hint(v.zhipu_api_key)||"智谱 API Key（视觉模型用）";
     const dk=document.getElementById('cfg-dskey'); if(dk){ dk.value=""; dk.placeholder=_hint(v.deepseek_api_key)||"DeepSeek API Key（文本抽取默认）"; }
-    document.getElementById('cfg-model').value=v.zhipu_model||"deepseek-chat";
+    document.getElementById('cfg-model').value=v.zhipu_model||"glm-4-flash";
     document.getElementById('cfg-vmodel').value=v.zhipu_vision_model||"";
     document.getElementById('cfg-imode').value=v.image_mode||"ocr_first";
     document.getElementById('cfg-webhooks').value=(v.smartsheet_webhooks||[]).join("\n");

@@ -2,8 +2,8 @@
 """解析层：把自然语言招聘文本/图片转成结构化记录。
 
 支持两个模型供应商，按 model 名称自动切换（无需改调用点）：
-  - 智谱 GLM：glm-4-flash / glm-4v-plus 等，走 ZHIPU_URL + 智谱 Key
-  - DeepSeek：deepseek-chat 等，走 DEEPSEEK_URL + DeepSeek Key（默认文本模型，响应更快）
+  - 智谱 GLM：glm-4-flash / glm-4v-plus 等，走 ZHIPU_URL + 智谱 Key（默认文本模型）
+  - DeepSeek：deepseek-chat 等，走 DEEPSEEK_URL + DeepSeek Key（备选：在模型名填 deepseek-chat 可切换）
 """
 import os
 import re
@@ -66,7 +66,7 @@ def _text_api_key():
 
 
 def _model():
-    return config_store.load().get("zhipu_model", "") or "deepseek-chat"
+    return config_store.load().get("zhipu_model", "") or "glm-4-flash"
 
 
 def _vision_model():
@@ -200,6 +200,24 @@ def _parse_once(text: str, model: str):
     return data.get("records", [])
 
 
+def _norm(v):
+    return (v or "").strip().lower()
+
+
+def _dedupe(records):
+    """按 (候选人, 岗位, 阶段) 去重，保留首次出现的记录，消除模型偶发的重复输出
+    （如同一人被模型输出了两遍、却漏了另一人）。"""
+    seen = set()
+    out = []
+    for r in records:
+        key = (_norm(r.get("candidate")), _norm(r.get("position")), _norm(r.get("stage")))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def parse_text(text: str, api_key=None, model=None):
     """
     调用大模型解析招聘文本，返回 records 列表。
@@ -212,15 +230,18 @@ def parse_text(text: str, api_key=None, model=None):
     if not text:
         return []
 
-    recs = _parse_once(text, model)
-    # 补偿：文本含多个强分隔符（；; 或换行）但只抽到 ≤1 条时，按分隔符分段分别解析再合并，
-    # 显著提升「一段话里多个候选人」的召回（glm-4-flash 单调用常漏抽）。
-    if len(recs) <= 1 and len(re.findall(r"[；;\n]", text)) >= 2:
-        recs = []
-        for part in re.split(r"[；;\n]+", text):
-            part = part.strip()
-            if len(part) >= 3:
-                recs += _parse_once(part, model)
+    raw = _parse_once(text, model)
+    # 按强分隔符（；; 或换行）切分段落，用于补偿模型偶发的「漏抽候选人 / 重复候选人」
+    segs = [s.strip() for s in re.split(r"[；;\n]+", text) if len(s.strip()) >= 3]
+    recs = _dedupe(raw)
+    # 触发分段补偿的两种情形：
+    #  1) 抽出的条数明显少于段落数（漏抽，如一段话 3 个候选人只出 1~2 条）；
+    #  2) 整段抽取结果里出现了重复候选（模型把同一人输出了两遍，却漏了另一人）。
+    # 仅对段落数较少（<=8）的输入触发，避免长文本产生过多调用。
+    if segs and len(segs) <= 8 and (len(recs) < len(segs) or len(recs) < len(raw)):
+        for part in segs:
+            recs += _parse_once(part, model)
+        recs = _dedupe(recs)
     return recs
 
 
@@ -248,7 +269,7 @@ def parse_image(image_bytes: bytes, filename: str = "image.png", api_key=None, m
       - ocr_first（默认）：本地 OCR 识别文字 → 文本大模型抽取字段（低成本）；OCR 不足时回退视觉模型
       - ocr_only：仅本地 OCR + 文本大模型；无 OCR 或识别不足则明确报错，绝不调用视觉模型
       - vision_only：跳过 OCR，直接调用视觉模型（成本较高、易触发 429 限流）
-    无论哪条路径，OCR 得到的文字最终都用便宜的文本模型（默认 DeepSeek / glm-4-flash）结构化抽取。
+    无论哪条路径，OCR 得到的文字最终都用便宜的文本模型（默认 glm-4-flash）结构化抽取。
     返回 records 列表。
     """
     if not (_text_api_key() or DEEPSEEK_API_KEY or config_store.load().get("deepseek_api_key")):

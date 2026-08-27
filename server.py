@@ -214,7 +214,7 @@ def api_config_save():
     if "zhipu_api_key" in data:
         _set("zhipu_api_key", data["zhipu_api_key"])
     if "zhipu_model" in data:
-        _set("zhipu_model", data["zhipu_model"] or "deepseek-chat")
+        _set("zhipu_model", data["zhipu_model"] or "glm-4-flash")
     if "zhipu_vision_model" in data:
         _set("zhipu_vision_model", data["zhipu_vision_model"] or "glm-4v-plus")
     if "deepseek_api_key" in data:

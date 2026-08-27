@@ -11,7 +11,7 @@ _token_cache = {"token": None, "expire": 0}
 
 DEFAULT = {
     "zhipu_api_key": "",
-    "zhipu_model": "deepseek-chat",   # 文本模型（默认 DeepSeek，响应更快）；可填 glm-4-flash 切回智谱
+    "zhipu_model": "glm-4-flash",     # 文本模型（默认 GLM-4-Flash，免费额度、响应快）；也可填 deepseek-chat 用 DeepSeek
     "zhipu_vision_model": "glm-4v-plus",
     "deepseek_api_key": "",
     "deepseek_model": "deepseek-chat",
@@ -63,7 +63,7 @@ def load():
     if not cfg["deepseek_api_key"]:
         cfg["deepseek_api_key"] = os.environ.get("DEEPSEEK_API_KEY", "")
     if not cfg["zhipu_model"]:
-        cfg["zhipu_model"] = os.environ.get("ZHIPU_MODEL", "") or "deepseek-chat"
+        cfg["zhipu_model"] = os.environ.get("ZHIPU_MODEL", "") or "glm-4-flash"
     if not cfg["deepseek_model"]:
         cfg["deepseek_model"] = os.environ.get("DEEPSEEK_MODEL", "") or "deepseek-chat"
     w = cfg["wecom"]
