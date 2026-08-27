@@ -131,52 +131,90 @@ def _build_markdown(records):
     return "\n".join(lines)
 
 
-def _pick(props, *candidates):
-    for c in candidates:
-        if c in props:
-            return c
-    return None
+def _build_sheet_cells(records, header_row, data_start):
+    """构造 sheet.set_range_value 的 values：表头行 + 数据行。
+    每个单元格形如 {row,col,value_type,string_value|number_value}。"""
+    cells = []
+    for c, h in enumerate(HEADERS_CN):
+        cells.append({"row": header_row, "col": c, "value_type": "STRING", "string_value": h})
+    for i, r in enumerate(records):
+        rr = data_start + i
+        for c, k in enumerate(KEYS):
+            v = r.get(k)
+            if v is None or v == "":
+                cells.append({"row": rr, "col": c, "value_type": "STRING", "string_value": ""})
+                continue
+            s = str(v)
+            # 数值（年龄等）自动按 NUMBER 写，便于筛选/排序
+            try:
+                num = float(s) if "." in s else int(s)
+                if str(num) == s.strip():
+                    cells.append({"row": rr, "col": c, "value_type": "NUMBER", "number_value": num})
+                    continue
+            except Exception:
+                pass
+            cells.append({"row": rr, "col": c, "value_type": "STRING", "string_value": s})
+    return cells
 
 
-def _map_range_args(props, file_id, sheet_id, records):
-    """把我们的数据映射到 batch_update_sheet_range 的参数（按属性名实际存在与否）。"""
-    rows = _build_rows(records)
-    values = [list(HEADERS_CN)] + rows
-    args = {}
-    k = _pick(props, "file_id", "doc_id", "fileId", "docId")
-    if k:
-        args[k] = file_id
-    k = _pick(props, "sheet_id", "sheetId")
-    if k:
-        args[k] = sheet_id or ""
-    k = _pick(props, "range", "rangeA1", "a1Range")
-    if k:
-        args[k] = "A1"
-    k = _pick(props, "values", "data", "cells")
-    if k:
-        args[k] = values
-    k = _pick(props, "valueInputOption", "value_input_option")
-    if k:
-        args[k] = "USER_ENTERED"
-    k = _pick(props, "markdown", "content", "markdownContent")
-    if k and not any(x in args for x in ("values", "data", "cells")):
-        args[k] = _build_markdown(records)
-    return args or None
+def _extract_sheet_id(info):
+    """从 sheet.get_sheet_info 的返回里取第一个子表 ID。"""
+    if not info:
+        return ""
+    try:
+        txt = ""
+        if isinstance(info, dict):
+            for it in (info.get("content") or []):
+                if isinstance(it, dict) and it.get("type") == "text":
+                    txt += it.get("text", "")
+        data = json.loads(txt) if txt else info
+        sheets = (data.get("sheets") or (data.get("result") or {}).get("sheets") or [])
+        if sheets:
+            return sheets[0].get("sheet_id", "")
+    except Exception:
+        return ""
+    return ""
 
 
-def _map_create_args(props, records):
-    md = _build_markdown(records)
-    args = {}
-    k = _pick(props, "markdown", "content", "markdownContent")
-    if k:
-        args[k] = md
-    k = _pick(props, "title", "name", "fileName")
-    if k:
-        args[k] = "招聘数据同步快照"
-    k = _pick(props, "parent_id", "parentId", "folder_id")
-    if k:
-        args[k] = ""
-    return args or None
+def _detect_layout(token, session, file_id, sheet_id):
+    """探测表头所在行与数据起始行：兼容 A1 为标题、第2行为表头的情况（如『招聘候选人信息表』标题+A1表头）。"""
+    head_n = min(len(HEADERS_CN), 12)
+
+    def match(row):
+        parts = [x.strip() for x in row.split(",")]
+        if len(parts) < head_n:
+            return False
+        return all(parts[i] == HEADERS_CN[i] for i in range(head_n))
+
+    try:
+        r = call_tool(token, "sheet.get_cell_data",
+                      {"file_id": file_id, "sheet_id": sheet_id,
+                       "start_row": 0, "start_col": 0,
+                       "end_row": 3, "end_col": len(HEADERS_CN),
+                       "return_csv": True}, session)
+        txt = ""
+        if isinstance(r, dict):
+            for it in (r.get("content") or []):
+                if isinstance(it, dict) and it.get("type") == "text":
+                    txt += it.get("text", "")
+        data = json.loads(txt) if txt else {}
+        rows = data.get("csv_data", "").splitlines()
+        if len(rows) > 1 and match(rows[1]):
+            return 1, 2
+        if rows and match(rows[0]):
+            return 0, 1
+    except Exception:
+        pass
+    return 1, 2  # 默认：A1 为标题、第2行为表头
+
+
+def _real_doc_url(token, session, file_id):
+    """尽量取真实可打开链接（file_id slug 与实际 URL slug 通常不同）。"""
+    try:
+        r = call_tool(token, "manage.query_file_info", {"file_id": file_id}, session)
+        return _extract_url(_text_of(r))
+    except Exception:
+        return ""
 
 
 # ---------------- 写入入口 ----------------
@@ -205,11 +243,19 @@ def _doc_url(res, file_id):
     return ""
 
 def push(records, file_id=None, sheet_id=None):
-    """把记录同步到腾讯文档。返回 (记录条数, 错误信息列表, 文档链接)。失败不影响主流程。"""
+    """把记录同步到腾讯文档。返回 (记录条数, 错误信息列表, 文档链接)。失败不影响主流程。
+
+    写入路径（按 MCP 实际暴露的工具动态选择）：
+      1) 在线表格 sheet：用 sheet.set_range_value（需先取子表 sheet_id，单元格列表格式）。
+         覆盖式同步——重写表头 + 全量数据（从探测到的数据起始行起）。
+      2) 智能表格 smartsheet：用 smartsheet.add_records（按字段标题写，追加到末尾）。
+    """
     token = _token()
     if not token:
         return 0, ["未配置腾讯文档 Token：请在「配置我的凭证」填入 MCP Token（https://docs.qq.com/open/auth/mcp.html 获取）"], ""
     file_id = file_id or FILE_ID
+    if not file_id:
+        return 0, ["未指定目标表格 file_id：请在配置或主页面粘贴腾讯文档表格链接（从链接里取 ID）"], ""
     if not records:
         return 0, [], ""
 
@@ -220,46 +266,43 @@ def push(records, file_id=None, sheet_id=None):
         tools = list_tools(token, session)
     except Exception as e:
         return 0, [f"连接腾讯文档 MCP 失败：{e}"], ""
-
     names = {t.get("name") for t in tools}
 
-    # 1) 已有目标表格 → 更新
-    if file_id and "batch_update_sheet_range" in names:
-        t = next(t for t in tools if t.get("name") == "batch_update_sheet_range")
-        props = (t.get("inputSchema") or {}).get("properties", {})
-        args = _map_range_args(props, file_id, sheet_id, records)
-        if args:
-            try:
-                res = call_tool(token, "batch_update_sheet_range", args, session)
-                if isinstance(res, dict) and res.get("isError"):
-                    errs.append("batch_update_sheet_range 报错：" + _text_of(res))
-                else:
-                    return pushed, errs, _doc_url(res, file_id)
-            except Exception as e:
-                errs.append(f"batch_update_sheet_range 调用失败：{e}")
-        else:
-            errs.append("batch_update_sheet_range 参数无法映射，schema=" + json.dumps(props, ensure_ascii=False))
+    # 路径1：普通在线表格 sheet.set_range_value（推荐）
+    if "sheet.set_range_value" in names:
+        if not sheet_id:
+            sheet_id = _extract_sheet_id(call_tool(token, "sheet.get_sheet_info", {"file_id": file_id}, session))
+        if not sheet_id:
+            return pushed, ["无法获取子表 ID（请确认 file_id 正确，且该文件是在线表格 sheet 而非智能表格）"], ""
+        header_row, data_start = _detect_layout(token, session, file_id, sheet_id)
+        cells = _build_sheet_cells(records, header_row, data_start)
+        try:
+            res = call_tool(token, "sheet.set_range_value",
+                           {"file_id": file_id, "sheet_id": sheet_id, "values": cells}, session)
+            if res is None or (isinstance(res, dict) and res.get("isError")):
+                return pushed, ["写入失败：" + _text_of(res)], ""
+            url = _real_doc_url(token, session, file_id) or ("https://docs.qq.com/sheet/" + file_id)
+            return pushed, errs, url
+        except Exception as e:
+            return pushed, [f"写入调用失败：{e}"], ""
 
-    # 2) 兜底：新建 Excel 快照
-    if "create_excel_by_markdown" in names:
-        t = next(t for t in tools if t.get("name") == "create_excel_by_markdown")
-        props = (t.get("inputSchema") or {}).get("properties", {})
-        args = _map_create_args(props, records)
-        if args:
-            try:
-                res = call_tool(token, "create_excel_by_markdown", args, session)
-                if isinstance(res, dict) and res.get("isError"):
-                    errs.append("create_excel_by_markdown 报错：" + _text_of(res))
-                else:
-                    return pushed, errs, _doc_url(res, "")
-            except Exception as e:
-                errs.append(f"create_excel_by_markdown 调用失败：{e}")
-        else:
-            errs.append("create_excel_by_markdown 参数无法映射，schema=" + json.dumps(props, ensure_ascii=False))
-    else:
-        errs.append("未找到可用写入工具；可用工具：" + ", ".join(sorted(names)))
+    # 路径2：智能表格 smartsheet.add_records（按字段标题写，追加到末尾）
+    if "smartsheet.add_records" in names:
+        recs = []
+        for r in records:
+            fv = [{"title": HEADERS_CN[i], "value": ("" if r.get(KEYS[i]) is None else str(r.get(KEYS[i])))}
+                  for i in range(len(KEYS))]
+            recs.append({"field_values": fv})
+        try:
+            res = call_tool(token, "smartsheet.add_records", {"file_id": file_id, "records": recs}, session)
+            if res is None or (isinstance(res, dict) and res.get("isError")):
+                return pushed, ["智能表格写入失败：" + _text_of(res)], ""
+            url = _real_doc_url(token, session, file_id) or ("https://docs.qq.com/smartsheet/" + file_id)
+            return pushed, errs, url
+        except Exception as e:
+            return pushed, [f"智能表格写入调用失败：{e}"], ""
 
-    return pushed, errs, ""
+    return pushed, ["未找到可用写入工具；可用工具：" + ", ".join(sorted(names))], ""
 
 
 def _text_of(result):
