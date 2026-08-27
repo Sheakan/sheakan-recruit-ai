@@ -4,7 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>智聘 · 招聘数据智能中枢</title>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="/static/echarts.min.js"></script>
+<script>if(typeof echarts==='undefined'){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';document.head.appendChild(s);}</script>
 <style>
   :root{
     --bg:#f5f7fb; --card:#fff; --line:#e6eaf2; --text:#1f2d3d;
@@ -313,6 +314,28 @@ const FIELDS = [
 ];
 let records = [];
 let funnelChart, barChart, pieCh, pieSt;
+let chartsReady=false;
+// 惰性 + 容错初始化图表：若 echarts 未加载（CDN 被拦截/离线）或容器不存在，
+// 不抛错、不阻塞表格渲染，仅跳过图表。
+function _initCharts(){
+  if(chartsReady) return true;
+  if(typeof echarts==='undefined'){
+    console.warn('echarts 未加载，跳过图表渲染');
+    return false;
+  }
+  const f=document.getElementById('funnel');
+  if(!f) return false;
+  try{
+    funnelChart=echarts.init(f);
+    barChart=echarts.init(document.getElementById('bar'));
+    pieCh=echarts.init(document.getElementById('pieChannel'));
+    pieSt=echarts.init(document.getElementById('pieStatus'));
+    chartsReady=true;
+    return true;
+  }catch(e){ console.warn('图表初始化失败：',e); return false; }
+}
+// 容错设置：图表未就绪时静默跳过，绝不让图表异常中断 render（否则表格也不渲染）
+function _setChart(chart, opt){ if(chart && typeof chart.setOption==='function'){ try{ chart.setOption(opt); }catch(e){ console.warn('图表 setOption 失败：',e); } } }
 
 function setStatus(msg, type=''){ if(type===true) type='err'; const s=document.getElementById('status'); s.textContent=msg||''; s.className=type; }
 const SHOW_KEYS=[["candidate","候选人"],["gender","性别"],["age","年龄"],["position","岗位"],["department","部门"],["stage","阶段"],["status","状态"],["channel","渠道"],["phone","手机号"],["email","邮箱"],["expectedCity","期望城市"],["remark","备注"]];
@@ -739,8 +762,10 @@ function render(){
     });
   } else { view=view.reverse(); }
 
+  // 图表：先尝试初始化（容错），任一图表失败不影响表格渲染
+  _initCharts();
   // stageCount 已在前面按「去重候选人」计算，漏斗图直接复用
-  funnelChart.setOption({tooltip:{trigger:"item"},series:[{type:"funnel",top:10,bottom:10,left:"5%",width:"90%",label:{formatter:"{b}: {c}"},data:STAGES.map((s,i)=>({name:s,value:stageCount[i]}))}]});
+  _setChart(funnelChart,{tooltip:{trigger:"item"},series:[{type:"funnel",top:10,bottom:10,left:"5%",width:"90%",label:{formatter:"{b}: {c}"},data:STAGES.map((s,i)=>({name:s,value:stageCount[i]}))}]});
 
   // 岗位分布图：同一候选人报同一岗位只算 1 次（去重）
   const posMap={};
@@ -753,7 +778,7 @@ function render(){
     posMap[p]=(posMap[p]||0)+1;
   });
   const posNames=Object.keys(posMap);
-  barChart.setOption({tooltip:{trigger:"axis"},xAxis:{type:"category",data:posNames,axisLabel:{interval:0,rotate:30}},yAxis:{type:"value",minInterval:1},series:[{type:"bar",data:posNames.map(p=>posMap[p]),itemStyle:{color:"#4285f4"}}]});
+  _setChart(barChart,{tooltip:{trigger:"axis"},xAxis:{type:"category",data:posNames,axisLabel:{interval:0,rotate:30}},yAxis:{type:"value",minInterval:1},series:[{type:"bar",data:posNames.map(p=>posMap[p]),itemStyle:{color:"#4285f4"}}]});
 
   // 渠道分布：去重（同一候选人来自同一渠道只计 1 次）
   const chMap={};
@@ -765,7 +790,7 @@ function render(){
     seenCh.add(k);
     chMap[c]=(chMap[c]||0)+1;
   });
-  pieCh.setOption({tooltip:{trigger:"item"},series:[{type:"pie",radius:"55%",data:Object.keys(chMap).map(c=>({name:c,value:chMap[c]})),label:{formatter:"{b}: {c}"}}]});
+  _setChart(pieCh,{tooltip:{trigger:"item"},series:[{type:"pie",radius:"55%",data:Object.keys(chMap).map(c=>({name:c,value:chMap[c]})),label:{formatter:"{b}: {c}"}}]});
 
   // 状态分布：按「每个候选人的最晚阶段状态」去重计数，避免同一人不同阶段多条状态叠加失真
   const stMap={};
@@ -779,7 +804,7 @@ function render(){
     if(!latest[k] || so>=latest[k].stageOrder) latest[k]={stageOrder:so,status:s};
   });
   Object.values(latest).forEach(v=>{ const s=v.status; stMap[s]=(stMap[s]||0)+1; });
-  pieSt.setOption({tooltip:{trigger:"item"},series:[{type:"pie",radius:"55%",data:Object.keys(stMap).map(s=>({name:s,value:stMap[s]})),label:{formatter:"{b}: {c}"}}]});
+  _setChart(pieSt,{tooltip:{trigger:"item"},series:[{type:"pie",radius:"55%",data:Object.keys(stMap).map(s=>({name:s,value:stMap[s]})),label:{formatter:"{b}: {c}"}}]});
 
   const tb=document.querySelector("#tbl tbody");
   if(!view.length){
@@ -804,14 +829,13 @@ function render(){
 }
 
 window.onload=async()=>{
-  funnelChart=echarts.init(document.getElementById('funnel'));
-  barChart=echarts.init(document.getElementById('bar'));
-  pieCh=echarts.init(document.getElementById('pieChannel'));
-  pieSt=echarts.init(document.getElementById('pieStatus'));
+  _initCharts();
   await loadConfig();
   await refresh();
   await loadAnomalies();
-  window.addEventListener('resize',()=>{funnelChart.resize();barChart.resize();pieCh.resize();pieSt.resize();});
+  window.addEventListener('resize',()=>{
+    if(chartsReady){ try{ funnelChart.resize();barChart.resize();pieCh.resize();pieSt.resize(); }catch(e){} }
+  });
 };
 </script>
 </body>
