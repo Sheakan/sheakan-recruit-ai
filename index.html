@@ -642,10 +642,14 @@ async function connectTdocs(){
 }
 
 async function syncTdocs(){
-  let fileId=document.getElementById('tdoc-file').value.trim();
-  let sheetId=document.getElementById('tdoc-sheet').value.trim();
+  let fileId="", sheetId="";
+  try{
+    fileId=(document.getElementById('tdoc-file')||{}).value?.trim()||"";
+    sheetId=(document.getElementById('tdoc-sheet')||{}).value?.trim()||"";
+  }catch(e){}
   // 主页面未填时，回退到「配置我的凭证」中已保存的目标表格
-  if(!fileId && CFG_TDOC && CFG_TDOC.file_id){ fileId=CFG_TDOC.file_id; sheetId=CFG_TDOC.sheet_id||sheetId; }
+  const _cfg=window.CFG_TDOC||{};
+  if(!fileId && _cfg.file_id){ fileId=_cfg.file_id; sheetId=_cfg.sheet_id||sheetId; }
   // 支持直接粘贴完整链接，自动解析 fileId / sheetId
   if(fileId.includes('docs.qq.com')){
     try{
@@ -663,25 +667,32 @@ async function syncTdocs(){
   setStatus("同步到腾讯文档中…");
   try{
     const r=await fetch("/api/tdocs/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fileId,sheetId})});
-    const d=await r.json();
+    let d={};
+    try{ d=await r.json(); }catch(e){ d={}; }
     if(d.error){ setStatus("同步失败："+d.error, true); return; }
-    let msg="已同步 "+(d.pushed||0)+" 条到腾讯文档在线表格";
-    if(d.errors&&d.errors.length) msg+="；注意："+d.errors.join("; ");
-    setStatus(msg);
+    const pushed=d.pushed||0;
+    const errs=d.errors||[];
     // 同步成功后，给出「在腾讯文档中打开」按钮（新标签页跳转）
     let openUrl=d.doc_url;
     if(!openUrl){
-      // 兜底：用用户提供的链接/ID 直接构造
       if(fileId.includes('docs.qq.com')) openUrl=fileId;
       else if(fileId) openUrl="https://docs.qq.com/sheet/"+fileId;
     }
     const box=document.getElementById('tdoc-open');
     if(box){
       box.innerHTML = openUrl
-        ? `<a class="ghost" href="${openUrl}" target="_blank" rel="noopener">🔗 在腾讯文档中打开（${d.pushed||0} 条）</a>`
+        ? `<a class="ghost" href="${openUrl}" target="_blank" rel="noopener">🔗 在腾讯文档中打开（${pushed} 条）</a>`
         : `<span class="src">同步成功，但未获取到文档链接；请到腾讯文档查看刚写入的表格。</span>`;
     }
-  }catch(e){ setStatus("同步失败："+e.message, true); }
+    // 反馈优先级：有错误→红色；0 条→橙色提示；成功→绿色
+    if(errs.length){
+      setStatus("同步完成 "+pushed+" 条，但有异常："+errs.join("； "), true);
+    }else if(pushed===0){
+      setStatus("没有可同步的数据（本地记录为空，或写入未生效）。请先解析/导入候选数据，再点同步。", true);
+    }else{
+      setStatus("已同步 "+pushed+" 条到腾讯文档 ✅（覆盖式写入，从 A1 开始）");
+    }
+  }catch(e){ setStatus("同步请求失败："+e.message+"（请打开浏览器控制台查看详情）", true); }
 }
 
 // ---- 编辑 / 删除 ----
