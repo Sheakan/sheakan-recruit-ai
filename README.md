@@ -122,7 +122,7 @@ python server.py
 
 本系统是一个 Python(Flask) 服务，需要一个能跑后端的环境（纯静态托管不行）。推荐几种免费/低成本的部署方式，**部署时务必在平台设置环境变量** `ZHIPU_API_KEY`（解析必需）、`TENCENT_DOCS_MCP_TOKEN`（同步腾讯文档时需要）。
 
-### 方式一：Render（最简单，推荐）
+### 方式一：Render
 
 1. 把本仓库推到 GitHub；
 2. 打开 https://render.com → New → Web Service → 连 GitHub 仓库；
@@ -135,22 +135,10 @@ python server.py
 - 已附 `Procfile`（`web: python server.py`），Railway 连仓库后自动识别；
 - 在平台 Variables 设 `ZHIPU_API_KEY`，部署即得公开地址。
 
-### 方式三：CloudBase（腾讯云，贴合方案生态）
+### 方式三：CloudBase
 
 - 仓库已含 `Dockerfile` 与 `cloudbaserc.json`（云托管容器模式）；
 - 在 CloudBase 控制台创建环境 → 云托管 → 新建服务，来源选「代码仓库 / Dockerfile」；
 - 在环境变量中填 `ZHIPU_API_KEY`、`TENCENT_DOCS_MCP_TOKEN`（同步腾讯文档时需要）等；
 - 部署后获得公网访问地址，可直接在方案里展示"腾讯生态一键部署"。
 - 本项目已实际部署于 CloudBase 云托管（环境 `control103`），预览地址：**https://recruit-ai-303150-11-1343245134.sh.run.tcloudbase.com**
-
-### 方式四：腾讯云函数 SCF（更贴合"云函数作为数据处理中枢"）
-
-本系统默认以**云函数**形态运行，落实方案中"腾讯云函数 SCF 作为中枢"的设计：
-
-- **Web 函数（推荐）**：SCF 控制台新建「Web 函数」→ 运行环境 Python3.11 → 上传本仓库 → 启动命令填 `scf_bootstrap`（脚本会自动装依赖并启动 Flask 服务，监听 `$PORT`）；
-- **事件函数**：用 `app.py` 的 `handler`（内置 `serverless-wsgi` 适配 Flask），`cloudbaserc.json` 已含对应 `functions` 与 API 网关触发器配置；
-- 部署后，Web 录入页即为「函数提取消息」入口；若启用企业微信智能表轮询，在 SCF 建一个**定时触发器**（如每 5 分钟）调用 `/api/poll_smartsheet`，即可自动从企业微信智能表拉取并提取——**全程无需 ICP 备案域名**。
-
-云函数本身**不能**绕过企业微信回调的域名备案要求。本系统用「Web 录入 + 智能表轮询拉取」两条**免域名**通道解决"函数提取消息"，群消息实时接收仍需备案域名或会话存档（接口已保留）。
-
-公开部署后，任何人都能访问页面，但解析依赖你的 `ZHIPU_API_KEY`（服务端持有，前端不可见）。演示用可限制调用或后续加简单鉴权。
